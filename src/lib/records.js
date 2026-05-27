@@ -1,7 +1,9 @@
 export const STORAGE_KEY = 'glucose-h5-records';
 export const UNIT = 'mmol/L';
+export const CHART_REFERENCE_LIMIT_STORAGE_KEY = 'glucose-h5-chart-reference-limit';
+export const DEFAULT_CHART_REFERENCE_LIMIT = 7.8;
 
-export const PERIODS = ['空腹', '早餐后', '午餐后', '晚餐后', '睡前', '其他'];
+export const PERIODS = ['空腹', '早餐后', '午饭前', '午餐后', '晚饭前', '晚餐后', '睡前', '其他'];
 
 const pad = (value) => String(value).padStart(2, '0');
 
@@ -74,6 +76,24 @@ export function formatDateTime(value) {
   if (Number.isNaN(date.getTime())) return value;
 
   return `${date.getMonth() + 1}月${date.getDate()}日 ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+export function normalizeChartReferenceLimit(value, fallback = DEFAULT_CHART_REFERENCE_LIMIT) {
+  const numericValue = Number(value);
+  const fallbackValue = Number(fallback);
+  const safeFallback = Number.isFinite(fallbackValue) && fallbackValue > 0 && fallbackValue <= 40
+    ? fallbackValue
+    : DEFAULT_CHART_REFERENCE_LIMIT;
+
+  if (!Number.isFinite(numericValue) || numericValue <= 0 || numericValue > 40) {
+    return Number(safeFallback.toFixed(1));
+  }
+
+  return Number(numericValue.toFixed(1));
+}
+
+export function formatGlucoseLimit(value) {
+  return String(normalizeChartReferenceLimit(value));
 }
 
 export function makeSeedRecords(now = new Date()) {

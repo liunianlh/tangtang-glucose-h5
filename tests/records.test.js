@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  PERIODS,
   applyRecordMutation,
   createRecord,
   deleteRecord,
@@ -14,6 +15,19 @@ describe('blood glucose record utilities', () => {
     createRecord({ id: 'new', value: 7.2, period: '早餐后', measuredAt: '2026-05-25T09:30', note: '早餐后散步' }),
     createRecord({ id: 'mid', value: 6.4, period: '睡前', measuredAt: '2026-05-21T22:00', note: '' })
   ];
+
+  it('offers the requested pre-meal measurement periods', () => {
+    expect(PERIODS).toEqual([
+      '空腹',
+      '早餐后',
+      '午饭前',
+      '午餐后',
+      '晚饭前',
+      '晚餐后',
+      '睡前',
+      '其他'
+    ]);
+  });
 
   it('sorts records from newest to oldest and returns the latest entry', () => {
     const sorted = sortRecordsByTime(records);

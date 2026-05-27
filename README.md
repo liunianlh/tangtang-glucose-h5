@@ -44,8 +44,12 @@ cp .env.example .env
 ```env
 DATABASE_URL="mysql://glucose_user:glucose_password@localhost:3306/glucose_records"
 PORT=3001
-DEFAULT_USER_ID="wife-user"
+AUTH_SECRET="please-change-this-to-a-long-random-string"
+FOOD_UPLOAD_DIR="uploads/food-images"
 ```
+
+`AUTH_SECRET` 用来签发登录令牌，线上部署时请换成足够长的随机字符串。
+`FOOD_UPLOAD_DIR` 是饮食图片的服务器本地保存目录，默认会放在项目下的 `uploads/food-images`，请不要提交到 Git。
 
 生成 Prisma Client：
 
@@ -74,19 +78,39 @@ npm run dev -- --port 5173
 ## API
 
 - `GET /api/health`
+- `GET /api/auth/captcha`
+- `POST /api/auth/register`
+- `POST /api/auth/login`
+- `GET /api/auth/me`
 - `GET /api/records`
 - `POST /api/records`
 - `PUT /api/records/:id`
 - `DELETE /api/records/:id`
 - `DELETE /api/records`
+- `GET /api/food-records`
+- `POST /api/food-records`
+- `PUT /api/food-records/:id`
+- `DELETE /api/food-records/:id`
+- `DELETE /api/food-records`
+- `GET /api/food-images/:key`
 
-请求头暂时使用：
+注册示例：
 
-```text
-x-user-id: wife-user
+```json
+{
+  "username": "tangtang",
+  "password": "12345678",
+  "displayName": "糖糖",
+  "captchaToken": "<GET /api/auth/captcha 返回的 token>",
+  "captchaAnswer": "8"
+}
 ```
 
-后续接账号登录后会替换成真实鉴权上下文。
+注册和登录前先调用 `GET /api/auth/captcha` 获取题目和 `captchaToken`，提交账号信息时带上用户填写的 `captchaAnswer`。登录成功后会返回 `token`。血糖记录接口需要带上：
+
+```text
+Authorization: Bearer <token>
+```
 
 ## 验证
 

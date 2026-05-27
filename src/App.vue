@@ -1,10 +1,78 @@
 <template>
   <main class="app-shell">
-    <section class="phone-frame" aria-label="糖糖记录本">
+    <section v-if="!isAuthReady" class="auth-card auth-loading" aria-label="正在加载">
+      <HeartPulse :size="34" />
+      <h1>糖糖记录本</h1>
+      <p>正在确认登录状态...</p>
+    </section>
+
+    <section v-else-if="!currentUser" class="auth-card page-enter" aria-label="账号登录">
+      <div class="auth-brand">
+        <div>
+          <p class="eyebrow">多用户血糖记录</p>
+          <h1>登录糖糖记录本</h1>
+        </div>
+        <div class="auth-mark" aria-hidden="true">
+          <Sparkles :size="25" />
+        </div>
+      </div>
+
+      <div class="auth-switch" role="tablist" aria-label="登录或注册">
+        <button type="button" :class="{ active: authMode === 'login' }" @click="switchAuthMode('login')">登录</button>
+        <button type="button" :class="{ active: authMode === 'register' }" @click="switchAuthMode('register')">注册账号</button>
+      </div>
+
+      <form class="auth-form" @submit.prevent="submitAuth">
+        <label class="field">
+          <span>用户名</span>
+          <input v-model.trim="authForm.username" autocomplete="username" placeholder="例如 tangtang" required />
+        </label>
+
+        <label v-if="authMode === 'register'" class="field">
+          <span>昵称</span>
+          <input v-model.trim="authForm.displayName" autocomplete="nickname" placeholder="比如 我的老婆" required />
+        </label>
+
+        <label class="field">
+          <span>密码</span>
+          <input
+            v-model="authForm.password"
+            type="password"
+            :autocomplete="authMode === 'login' ? 'current-password' : 'new-password'"
+            placeholder="至少 6 位"
+            required
+          />
+        </label>
+
+        <label v-if="authMode === 'register'" class="field">
+          <span>确认密码</span>
+          <input v-model="authForm.confirmPassword" type="password" autocomplete="new-password" placeholder="再输入一次" required />
+        </label>
+
+        <label class="field captcha-field">
+          <span>验证码</span>
+          <div class="captcha-control">
+            <strong class="captcha-question" aria-live="polite">{{ captchaChallenge?.question || '加载中...' }}</strong>
+            <button class="icon-button" type="button" aria-label="刷新验证码" :disabled="isLoadingCaptcha || isAuthenticating" @click="refreshCaptcha">
+              <RefreshCw :size="18" />
+            </button>
+          </div>
+          <input v-model.trim="authForm.captchaAnswer" aria-label="验证码答案" inputmode="numeric" autocomplete="off" placeholder="输入答案" required />
+        </label>
+
+        <p v-if="authError" class="auth-error">{{ authError }}</p>
+
+        <button class="primary-action" type="submit" :disabled="isAuthenticating || isLoadingCaptcha || !captchaChallenge">
+          <Check :size="20" />
+          {{ isAuthenticating ? '处理中...' : authMode === 'login' ? '登录' : '注册并进入' }}
+        </button>
+      </form>
+    </section>
+
+    <section v-else class="phone-frame" aria-label="糖糖记录本">
       <div class="screen-scroll">
         <header class="app-header">
           <div>
-            <p class="eyebrow">给我的老婆 · 蜜桃陪伴版</p>
             <h1>糖糖记录本</h1>
           </div>
           <button class="icon-button mascot-button" type="button" aria-label="查看设置" @click="activeTab = 'settings'">
@@ -25,10 +93,16 @@
             </div>
           </div>
 
-          <button class="primary-action" type="button" @click="openNewRecord">
-            <Plus :size="22" />
-            记录一次血糖
-          </button>
+          <div class="home-actions">
+            <button class="primary-action glucose-action" type="button" @click="openNewRecord">
+              <HeartPulse :size="21" />
+              记录血糖
+            </button>
+            <button class="secondary-action food-action" type="button" @click="openNewFoodRecord">
+              <Utensils :size="21" />
+              记录饮食
+            </button>
+          </div>
 
           <div class="summary-grid">
             <article>
@@ -53,7 +127,7 @@
               </div>
               <button class="text-button" type="button" @click="activeTab = 'chart'">查看</button>
             </div>
-            <GlucoseChart :records="records" compact />
+            <GlucoseChart :records="records" :reference-limit="chartReferenceLimit" compact />
           </section>
 
           <section class="quick-export">
@@ -80,10 +154,10 @@
           </div>
 
           <section class="card full-chart-card">
-            <GlucoseChart :records="records" />
+            <GlucoseChart :records="records" :reference-limit="chartReferenceLimit" />
             <div class="range-note">
               <span></span>
-              参考区间仅作日常记录参考，请以医生建议为准。
+              参考上限 {{ formattedChartReferenceLimit }} mmol/L，仅作日常记录参考，请以医生建议为准。
             </div>
           </section>
 
@@ -112,15 +186,20 @@
           <div class="page-title">
             <div>
               <p class="eyebrow">历史记录</p>
-              <h2>{{ records.length }} 条血糖记录</h2>
+              <h2>{{ activeRecordKind === 'glucose' ? `${records.length} 条血糖记录` : `${foodRecords.length} 条饮食记录` }}</h2>
             </div>
-            <button class="soft-button" type="button" @click="openNewRecord">
+            <button class="soft-button" type="button" @click="activeRecordKind === 'glucose' ? openNewRecord() : openNewFoodRecord()">
               <Plus :size="16" />
               新增
             </button>
           </div>
 
-          <div v-if="records.length" class="record-list">
+          <div class="record-switch" role="tablist" aria-label="记录类型">
+            <button type="button" :class="{ active: activeRecordKind === 'glucose' }" @click="activeRecordKind = 'glucose'">血糖记录</button>
+            <button type="button" :class="{ active: activeRecordKind === 'food' }" @click="activeRecordKind = 'food'">饮食记录</button>
+          </div>
+
+          <div v-if="activeRecordKind === 'glucose' && records.length" class="record-list">
             <article v-for="record in sortedRecords" :key="record.id" class="record-card" @click="detailRecord = record">
               <div class="record-date">
                 <span>{{ dayLabel(record.measuredAt) }}</span>
@@ -144,7 +223,35 @@
             </article>
           </div>
 
-          <EmptyState v-else title="还没有记录" body="点一下新增按钮，先记录最近一次测量。" />
+          <div v-else-if="activeRecordKind === 'food' && foodRecords.length" class="record-list">
+            <article v-for="record in sortedFoodRecords" :key="record.id" class="record-card food-record-card" @click="detailFoodRecord = record">
+              <div class="food-thumb" aria-hidden="true">
+                <img v-if="foodImageUrls[record.imageKey]" :src="foodImageUrls[record.imageKey]" alt="" />
+                <Utensils v-else :size="22" />
+              </div>
+              <div class="record-info">
+                <span>{{ record.mealType }} · {{ formatDateTime(record.eatenAt) }}</span>
+                <p>{{ record.content }}</p>
+              </div>
+              <div class="record-actions">
+                <small>{{ record.note || '无备注' }}</small>
+                <button
+                  class="record-delete-button"
+                  type="button"
+                  :aria-label="`删除${record.mealType}饮食记录`"
+                  @click.stop="confirmFoodDelete = record"
+                >
+                  <Trash2 :size="16" />
+                </button>
+              </div>
+            </article>
+          </div>
+
+          <EmptyState
+            v-else
+            :title="activeRecordKind === 'glucose' ? '还没有血糖记录' : '还没有饮食记录'"
+            :body="activeRecordKind === 'glucose' ? '点一下新增按钮，先记录最近一次测量。' : '拍一张饭菜，顺手记下吃了什么。'"
+          />
         </section>
 
         <section v-else-if="activeTab === 'export'" class="page-stack page-enter">
@@ -162,7 +269,7 @@
           <section ref="reportRef" class="report-card">
             <div class="report-head">
               <div>
-                <span>使用人：我的老婆</span>
+                <span>使用人：{{ currentUser.displayName }}</span>
                 <h3>血糖记录汇总</h3>
               </div>
               <div class="report-badge">{{ stats.count }} 条</div>
@@ -172,10 +279,13 @@
               <div><span>最高</span><strong>{{ stats.highest || '--' }}</strong></div>
               <div><span>最低</span><strong>{{ stats.lowest || '--' }}</strong></div>
             </div>
-            <GlucoseChart :records="records" compact />
+            <GlucoseChart :records="records" :reference-limit="chartReferenceLimit" compact />
             <div class="report-list">
-              <div v-for="record in sortedRecords.slice(0, 5)" :key="record.id">
-                <span>{{ formatDateTime(record.measuredAt) }} · {{ record.period }}</span>
+              <div v-for="record in sortedRecords" :key="record.id">
+                <span>
+                  <b>{{ formatDateTime(record.measuredAt) }} · {{ record.period }}</b>
+                  <small>{{ record.note || '无备注' }}</small>
+                </span>
                 <strong>{{ record.value }} {{ record.unit }}</strong>
               </div>
             </div>
@@ -198,29 +308,89 @@
         <section v-else class="page-stack page-enter">
           <div class="page-title">
             <div>
-              <p class="eyebrow">我的设置</p>
-              <h2>我的老婆的记录设置</h2>
+              <p class="eyebrow">个人中心</p>
+              <h2>我的糖糖账户</h2>
             </div>
           </div>
 
-          <section class="card settings-list">
-            <div>
-              <span>使用人</span>
-              <strong>我的老婆</strong>
+          <section class="profile-card">
+            <div class="profile-main">
+              <div class="profile-avatar" :style="avatarStyle" aria-hidden="true">
+                <span>{{ avatarInitial }}</span>
+              </div>
+              <div class="profile-copy">
+                <span>当前使用人</span>
+                <h3>{{ currentUser.displayName }}</h3>
+                <p>@{{ currentUser.username }}</p>
+              </div>
             </div>
-            <div>
+            <button v-if="!isEditingProfile" class="soft-button profile-edit-button" type="button" @click="startEditProfile">
+              <Pencil :size="16" />
+              编辑资料
+            </button>
+            <form v-else class="profile-edit-form" @submit.prevent="saveProfile">
+              <label class="field">
+                <span>昵称</span>
+                <input v-model.trim="profileForm.displayName" aria-label="昵称" maxlength="30" placeholder="输入昵称" required />
+              </label>
+              <p v-if="profileError" class="auth-error">{{ profileError }}</p>
+              <div class="profile-edit-actions">
+                <button class="secondary-action compact" type="button" :disabled="isSavingProfile" @click="cancelEditProfile">取消</button>
+                <button class="primary-action compact" type="submit" :disabled="isSavingProfile">
+                  <Check :size="18" />
+                  {{ isSavingProfile ? '保存中...' : '保存资料' }}
+                </button>
+              </div>
+            </form>
+          </section>
+
+          <section class="profile-stats">
+            <article>
+              <span>记录数</span>
+              <strong>{{ stats.count }}</strong>
+            </article>
+            <article>
+              <span>平均值</span>
+              <strong>{{ stats.average || '--' }}</strong>
+            </article>
+            <article>
+              <span>参考线</span>
+              <strong>{{ formattedChartReferenceLimit }}</strong>
+            </article>
+          </section>
+
+          <section class="card settings-list">
+            <div class="settings-item">
+              <span>账号</span>
+              <strong>{{ currentUser.username }}</strong>
+            </div>
+            <div class="settings-item">
               <span>默认单位</span>
               <strong>mmol/L</strong>
             </div>
-            <div>
-              <span>数据存储</span>
-              <strong>Node API + MySQL</strong>
-            </div>
-            <div>
-              <span>记录字段</span>
-              <strong>数值 / 时段 / 时间 / 备注</strong>
-            </div>
+            <label class="settings-row reference-setting">
+              <span>图表参考上限</span>
+              <div class="settings-number-control">
+                <input
+                  v-model.number="chartReferenceLimit"
+                  aria-label="图表参考上限"
+                  type="number"
+                  inputmode="decimal"
+                  min="0.1"
+                  max="40"
+                  step="0.1"
+                  @blur="saveChartReferenceLimit"
+                  @change="saveChartReferenceLimit"
+                />
+                <em>mmol/L</em>
+              </div>
+            </label>
           </section>
+
+          <button class="secondary-action" type="button" @click="logout">
+            <X :size="19" />
+            退出登录
+          </button>
 
           <button class="secondary-action danger" type="button" @click="showResetConfirm = true">
             <Trash2 :size="19" />
@@ -280,6 +450,60 @@
         </form>
       </div>
 
+      <div v-if="showFoodForm" class="modal-backdrop" @click.self="!isSavingFoodRecord && closeFoodForm()">
+        <form class="sheet" :aria-busy="isSavingFoodRecord" @submit.prevent="saveFoodRecord">
+          <div class="sheet-handle"></div>
+          <div class="sheet-head">
+            <h2>{{ editingFoodRecord ? '编辑饮食' : '记录饮食' }}</h2>
+            <button class="icon-button" type="button" aria-label="关闭" :disabled="isSavingFoodRecord" @click="closeFoodForm">
+              <X :size="20" />
+            </button>
+          </div>
+
+          <label class="field">
+            <span>餐次</span>
+            <select v-model="foodForm.mealType">
+              <option v-for="mealType in foodMealTypes" :key="mealType" :value="mealType">{{ mealType }}</option>
+            </select>
+          </label>
+
+          <label class="field">
+            <span>饮食时间</span>
+            <input v-model="foodForm.eatenAt" type="datetime-local" required />
+          </label>
+
+          <label class="field">
+            <span>饮食内容</span>
+            <textarea v-model.trim="foodForm.content" rows="3" maxlength="500" placeholder="比如杂粮饼半个，牛奶 250ml" required></textarea>
+          </label>
+
+          <label class="field">
+            <span>备注</span>
+            <textarea v-model.trim="foodForm.note" rows="2" maxlength="500" placeholder="比如饭后散步、吃得偏甜"></textarea>
+          </label>
+
+          <label class="field">
+            <span>图片</span>
+            <div class="food-upload">
+              <div class="food-upload-preview">
+                <img v-if="foodForm.previewUrl || foodImageUrls[editingFoodRecord?.imageKey]" :src="foodForm.previewUrl || foodImageUrls[editingFoodRecord?.imageKey]" alt="饮食图片预览" />
+                <ImagePlus v-else :size="26" />
+              </div>
+              <div>
+                <strong>{{ foodForm.imageFile ? foodForm.imageFile.name : editingFoodRecord?.imageKey ? '已保留原图' : '添加一张照片' }}</strong>
+                <small>支持 jpg、png、webp，最大 5MB</small>
+              </div>
+              <input type="file" accept="image/jpeg,image/png,image/webp" aria-label="饮食图片" @change="handleFoodImageChange" />
+            </div>
+          </label>
+
+          <button class="primary-action" type="submit" :disabled="isSavingFoodRecord">
+            <Check :size="20" />
+            {{ isSavingFoodRecord ? '保存中...' : '保存饮食' }}
+          </button>
+        </form>
+      </div>
+
       <div v-if="detailRecord" class="modal-backdrop" @click.self="detailRecord = null">
         <section class="sheet detail-sheet">
           <div class="sheet-handle"></div>
@@ -305,6 +529,35 @@
         </section>
       </div>
 
+      <div v-if="detailFoodRecord" class="modal-backdrop" @click.self="detailFoodRecord = null">
+        <section class="sheet detail-sheet food-detail-sheet">
+          <div class="sheet-handle"></div>
+          <div class="sheet-head">
+            <h2>饮食详情</h2>
+            <button class="icon-button" type="button" aria-label="关闭" @click="detailFoodRecord = null">
+              <X :size="20" />
+            </button>
+          </div>
+          <div class="food-detail-image">
+            <img v-if="foodImageUrls[detailFoodRecord.imageKey]" :src="foodImageUrls[detailFoodRecord.imageKey]" alt="饮食图片" />
+            <Utensils v-else :size="34" />
+          </div>
+          <p>{{ detailFoodRecord.mealType }} · {{ formatDateTime(detailFoodRecord.eatenAt) }}</p>
+          <div class="detail-note">{{ detailFoodRecord.content }}</div>
+          <div v-if="detailFoodRecord.note" class="detail-note muted-note">{{ detailFoodRecord.note }}</div>
+          <div class="split-actions">
+            <button class="secondary-action" type="button" @click="startEditFood(detailFoodRecord)">
+              <Pencil :size="18" />
+              编辑
+            </button>
+            <button class="secondary-action danger" type="button" @click="confirmFoodDelete = detailFoodRecord">
+              <Trash2 :size="18" />
+              删除
+            </button>
+          </div>
+        </section>
+      </div>
+
       <div v-if="confirmDelete" class="modal-backdrop" @click.self="confirmDelete = null">
         <section class="confirm-box">
           <h2>删除这条记录？</h2>
@@ -312,6 +565,17 @@
           <div class="split-actions">
             <button class="secondary-action" type="button" @click="confirmDelete = null">取消</button>
             <button class="secondary-action danger solid-danger" type="button" @click="removeRecord(confirmDelete.id)">删除</button>
+          </div>
+        </section>
+      </div>
+
+      <div v-if="confirmFoodDelete" class="modal-backdrop" @click.self="confirmFoodDelete = null">
+        <section class="confirm-box">
+          <h2>删除这条饮食？</h2>
+          <p>删除后饮食列表和对应图片会一起清理。</p>
+          <div class="split-actions">
+            <button class="secondary-action" type="button" @click="confirmFoodDelete = null">取消</button>
+            <button class="secondary-action danger solid-danger" type="button" @click="removeFoodRecord(confirmFoodDelete.id)">删除</button>
           </div>
         </section>
       </div>
@@ -336,7 +600,7 @@
 </template>
 
 <script setup>
-import { computed, defineComponent, h, nextTick, onMounted, ref } from 'vue';
+import { computed, defineComponent, h, nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
 import {
@@ -348,27 +612,48 @@ import {
   HeartPulse,
   Home,
   ImageDown,
+  ImagePlus,
   ListChecks,
   Pencil,
   Plus,
+  RefreshCw,
   Settings,
   Sparkles,
   Trash2,
+  Utensils,
   X
 } from 'lucide-vue-next';
 import {
+  CHART_REFERENCE_LIMIT_STORAGE_KEY,
+  DEFAULT_CHART_REFERENCE_LIMIT,
   PERIODS,
+  formatGlucoseLimit,
   formatDateTime,
   getLatestRecord,
   getRecordStats,
+  normalizeChartReferenceLimit,
   sortRecordsByTime,
   toLocalInputValue
 } from './lib/records.js';
 import {
+  clearAuthSession,
+  clearFoodRecordsOnServer,
   clearRecordsOnServer,
+  createFoodRecordOnServer,
   createRecordOnServer,
+  deleteFoodRecordOnServer,
   deleteRecordOnServer,
+  fetchFoodImageBlob,
+  getCaptchaChallenge,
+  getCurrentUser,
+  getStoredAuthSession,
+  loginAccount,
+  listFoodRecords,
   listRecords,
+  registerAccount,
+  setAuthSession,
+  updateCurrentUserProfile,
+  updateFoodRecordOnServer,
   updateRecordOnServer
 } from './lib/api.js';
 
@@ -381,29 +666,81 @@ const tabs = [
 ];
 
 const periods = PERIODS;
+const foodMealTypes = ['早餐', '午餐', '晚餐', '加餐', '其他'];
 const activeTab = ref('home');
+const activeRecordKind = ref('glucose');
 const records = ref([]);
+const foodRecords = ref([]);
+const foodImageUrls = ref({});
 const showForm = ref(false);
+const showFoodForm = ref(false);
 const editingRecord = ref(null);
+const editingFoodRecord = ref(null);
 const detailRecord = ref(null);
+const detailFoodRecord = ref(null);
 const confirmDelete = ref(null);
+const confirmFoodDelete = ref(null);
 const showResetConfirm = ref(false);
 const toast = ref('');
+const authMode = ref('login');
+const authError = ref('');
+const isAuthReady = ref(false);
+const isAuthenticating = ref(false);
+const isLoadingCaptcha = ref(false);
 const isExporting = ref(false);
 const isLoadingRecords = ref(false);
 const isSavingRecord = ref(false);
+const isSavingFoodRecord = ref(false);
+const isEditingProfile = ref(false);
+const isSavingProfile = ref(false);
 const reportRef = ref(null);
+const chartReferenceLimit = ref(DEFAULT_CHART_REFERENCE_LIMIT);
+const currentAuth = ref(null);
+const captchaChallenge = ref(null);
+const profileError = ref('');
 
+const authForm = ref({
+  username: '',
+  displayName: '',
+  password: '',
+  confirmPassword: '',
+  captchaAnswer: ''
+});
+const profileForm = ref({
+  displayName: ''
+});
 const form = ref({
   value: '',
   period: '早餐后',
   measuredAt: toLocalInputValue(),
   note: ''
 });
+const foodForm = ref({
+  mealType: '早餐',
+  eatenAt: toLocalInputValue(),
+  content: '',
+  note: '',
+  imageFile: null,
+  previewUrl: ''
+});
 
 const sortedRecords = computed(() => sortRecordsByTime(records.value));
+const sortedFoodRecords = computed(() => [...foodRecords.value].sort((left, right) => new Date(right.eatenAt) - new Date(left.eatenAt)));
 const latestRecord = computed(() => getLatestRecord(records.value));
 const stats = computed(() => getRecordStats(records.value));
+const currentUser = computed(() => currentAuth.value?.user || null);
+const formattedChartReferenceLimit = computed(() => formatGlucoseLimit(chartReferenceLimit.value));
+const avatarInitial = computed(() => {
+  const source = currentUser.value?.displayName || currentUser.value?.username || '糖';
+  return source.trim().slice(0, 1).toUpperCase();
+});
+const avatarStyle = computed(() => {
+  const source = currentUser.value?.username || 'tangtang';
+  const hue = [...source].reduce((total, char) => total + char.charCodeAt(0), 0) % 360;
+  return {
+    background: `linear-gradient(135deg, hsl(${hue} 84% 76%), hsl(${(hue + 42) % 360} 82% 64%))`
+  };
+});
 const chartInsight = computed(() => {
   if (!records.value.length) return '还没有可分析的数据，先记录一次血糖。';
   if (stats.value.highest >= 8) return '最近有偏高记录，建议保留备注，复盘饮食或运动情况。';
@@ -415,6 +752,7 @@ const GlucoseChart = defineComponent({
   name: 'GlucoseChart',
   props: {
     records: { type: Array, required: true },
+    referenceLimit: { type: Number, default: DEFAULT_CHART_REFERENCE_LIMIT },
     compact: { type: Boolean, default: false }
   },
   setup(props) {
@@ -425,6 +763,7 @@ const GlucoseChart = defineComponent({
       const height = props.compact ? 128 : 186;
       const padding = props.compact ? 18 : 24;
       const ordered = sortRecordsByTime(props.records).reverse().slice(-10);
+      const referenceLimit = normalizeChartReferenceLimit(props.referenceLimit);
 
       if (!ordered.length) {
         return h('div', { class: ['chart-empty', props.compact && 'compact'] }, [
@@ -434,8 +773,8 @@ const GlucoseChart = defineComponent({
       }
 
       const values = ordered.map((record) => record.value);
-      const min = Math.min(4, ...values) - 0.4;
-      const max = Math.max(9, ...values) + 0.4;
+      const min = Math.min(4, referenceLimit, ...values) - 0.4;
+      const max = Math.max(9, referenceLimit, ...values) + 0.4;
       const xStep = ordered.length === 1 ? 0 : (width - padding * 2) / (ordered.length - 1);
       const pointFor = (record, index) => {
         const x = ordered.length === 1 ? width / 2 : padding + index * xStep;
@@ -444,7 +783,7 @@ const GlucoseChart = defineComponent({
       };
       const points = ordered.map(pointFor);
       const path = points.map((point, index) => `${index === 0 ? 'M' : 'L'} ${point.x} ${point.y}`).join(' ');
-      const referenceY = height - padding - ((7.8 - min) / (max - min)) * (height - padding * 2);
+      const referenceY = height - padding - ((referenceLimit - min) / (max - min)) * (height - padding * 2);
       const tooltipPoint = activePoint.value;
       const tooltipSide = tooltipPoint?.x < width * 0.22
         ? 'align-left'
@@ -497,7 +836,7 @@ const GlucoseChart = defineComponent({
         ]),
         h('div', { class: 'chart-axis' }, [
           h('span', ordered[0] ? shortDate(ordered[0].measuredAt) : ''),
-          h('span', '参考上限 7.8'),
+          h('span', `参考上限 ${formatGlucoseLimit(referenceLimit)}`),
           h('span', ordered.at(-1) ? shortDate(ordered.at(-1).measuredAt) : '')
         ])
       ]);
@@ -521,16 +860,220 @@ const EmptyState = defineComponent({
 });
 
 onMounted(() => {
-  loadRecords();
+  loadChartReferenceLimit();
+  restoreAuth();
 });
 
+onBeforeUnmount(() => {
+  revokeFoodImageUrls();
+  revokeFoodPreviewUrl();
+});
+
+async function restoreAuth() {
+  const storedAuth = getStoredAuthSession();
+  if (!storedAuth?.token) {
+    await refreshCaptcha();
+    isAuthReady.value = true;
+    return;
+  }
+
+  try {
+    setAuthSession(storedAuth);
+    const user = await getCurrentUser();
+    currentAuth.value = { token: storedAuth.token, user };
+    setAuthSession(currentAuth.value);
+    await loadRecords(false);
+  } catch {
+    clearAuthSession();
+    currentAuth.value = null;
+    records.value = [];
+    foodRecords.value = [];
+    revokeFoodImageUrls();
+  } finally {
+    if (!currentAuth.value) {
+      await refreshCaptcha();
+    }
+    isAuthReady.value = true;
+  }
+}
+
+function switchAuthMode(mode) {
+  authMode.value = mode;
+  authError.value = '';
+  authForm.value.captchaAnswer = '';
+}
+
+async function refreshCaptcha() {
+  if (currentUser.value || isLoadingCaptcha.value) return;
+
+  isLoadingCaptcha.value = true;
+  try {
+    captchaChallenge.value = await getCaptchaChallenge();
+    authForm.value.captchaAnswer = '';
+  } catch {
+    captchaChallenge.value = null;
+    authError.value = '验证码加载失败，请刷新页面';
+  } finally {
+    isLoadingCaptcha.value = false;
+  }
+}
+
+async function submitAuth() {
+  if (isAuthenticating.value) return;
+
+  authError.value = '';
+  if (authMode.value === 'register' && authForm.value.password !== authForm.value.confirmPassword) {
+    authError.value = '两次输入的密码不一致';
+    return;
+  }
+  if (!captchaChallenge.value?.token) {
+    authError.value = '验证码还没加载好，请稍后再试';
+    await refreshCaptcha();
+    return;
+  }
+
+  isAuthenticating.value = true;
+  try {
+    const payload = {
+      username: authForm.value.username,
+      password: authForm.value.password,
+      captchaToken: captchaChallenge.value.token,
+      captchaAnswer: authForm.value.captchaAnswer
+    };
+    const auth = authMode.value === 'register'
+      ? await registerAccount({
+        ...payload,
+        displayName: authForm.value.displayName
+      })
+      : await loginAccount(payload);
+
+    currentAuth.value = auth;
+    setAuthSession(auth);
+    authForm.value = {
+      username: '',
+      displayName: '',
+      password: '',
+      confirmPassword: '',
+      captchaAnswer: ''
+    };
+    captchaChallenge.value = null;
+    activeTab.value = 'home';
+    await loadRecords(false);
+    showToast(authMode.value === 'register' ? '注册成功' : '登录成功');
+  } catch (error) {
+    if (error.status === 409) {
+      authError.value = '这个用户名已经被注册了';
+    } else if (error.status === 401) {
+      authError.value = '用户名或密码不正确';
+    } else if (error.body?.error === 'INVALID_CAPTCHA') {
+      authError.value = '验证码不正确，请重新输入';
+      await refreshCaptcha();
+    } else {
+      authError.value = '处理失败，请稍后再试';
+      await refreshCaptcha();
+    }
+  } finally {
+    isAuthenticating.value = false;
+  }
+}
+
+function logout() {
+  clearAuthSession();
+  currentAuth.value = null;
+  records.value = [];
+  foodRecords.value = [];
+  revokeFoodImageUrls();
+  revokeFoodPreviewUrl();
+  activeTab.value = 'home';
+  showForm.value = false;
+  showFoodForm.value = false;
+  detailRecord.value = null;
+  detailFoodRecord.value = null;
+  confirmDelete.value = null;
+  confirmFoodDelete.value = null;
+  showToast('已退出登录');
+  refreshCaptcha();
+}
+
+function startEditProfile() {
+  profileForm.value.displayName = currentUser.value?.displayName || '';
+  profileError.value = '';
+  isEditingProfile.value = true;
+}
+
+function cancelEditProfile() {
+  isEditingProfile.value = false;
+  profileError.value = '';
+}
+
+async function saveProfile() {
+  if (isSavingProfile.value) return;
+
+  profileError.value = '';
+  if (!profileForm.value.displayName.trim()) {
+    profileError.value = '昵称不能为空';
+    return;
+  }
+
+  isSavingProfile.value = true;
+  try {
+    const auth = await updateCurrentUserProfile({
+      displayName: profileForm.value.displayName
+    });
+    currentAuth.value = auth;
+    setAuthSession(auth);
+    isEditingProfile.value = false;
+    showToast('个人资料已更新');
+  } catch {
+    profileError.value = '资料保存失败，请稍后再试';
+  } finally {
+    isSavingProfile.value = false;
+  }
+}
+
+function loadChartReferenceLimit() {
+  try {
+    chartReferenceLimit.value = normalizeChartReferenceLimit(
+      window.localStorage.getItem(CHART_REFERENCE_LIMIT_STORAGE_KEY)
+    );
+  } catch {
+    chartReferenceLimit.value = DEFAULT_CHART_REFERENCE_LIMIT;
+  }
+}
+
+function saveChartReferenceLimit() {
+  chartReferenceLimit.value = normalizeChartReferenceLimit(chartReferenceLimit.value);
+
+  try {
+    window.localStorage.setItem(CHART_REFERENCE_LIMIT_STORAGE_KEY, String(chartReferenceLimit.value));
+  } catch {
+    // Local storage can be unavailable in private or embedded webviews.
+  }
+}
+
 async function loadRecords(showError = true) {
+  if (!currentUser.value) return;
+
   isLoadingRecords.value = true;
   try {
-    records.value = await listRecords();
-  } catch {
+    const [nextRecords, nextFoodRecords] = await Promise.all([
+      listRecords(),
+      listFoodRecords()
+    ]);
+    records.value = nextRecords;
+    foodRecords.value = nextFoodRecords;
+    await refreshFoodImageUrls(nextFoodRecords);
+  } catch (error) {
     records.value = [];
-    if (showError) showToast('后端 API 未连接');
+    foodRecords.value = [];
+    revokeFoodImageUrls();
+    if (error.status === 401) {
+      clearAuthSession();
+      currentAuth.value = null;
+      if (showError) showToast('登录已过期');
+    } else if (showError) {
+      showToast('后端 API 未连接');
+    }
   } finally {
     isLoadingRecords.value = false;
   }
@@ -550,6 +1093,66 @@ function openNewRecord() {
 function closeForm() {
   showForm.value = false;
   editingRecord.value = null;
+}
+
+function openNewFoodRecord() {
+  editingFoodRecord.value = null;
+  revokeFoodPreviewUrl();
+  foodForm.value = {
+    mealType: '早餐',
+    eatenAt: toLocalInputValue(),
+    content: '',
+    note: '',
+    imageFile: null,
+    previewUrl: ''
+  };
+  showFoodForm.value = true;
+}
+
+function closeFoodForm() {
+  showFoodForm.value = false;
+  editingFoodRecord.value = null;
+  revokeFoodPreviewUrl();
+}
+
+function handleFoodImageChange(event) {
+  const file = event.target.files?.[0] || null;
+  revokeFoodPreviewUrl();
+
+  if (!file) {
+    foodForm.value.imageFile = null;
+    foodForm.value.previewUrl = '';
+    return;
+  }
+
+  const validTypes = ['image/jpeg', 'image/png', 'image/webp'];
+  if (!validTypes.includes(file.type) || file.size > 5 * 1024 * 1024) {
+    event.target.value = '';
+    showToast('图片仅支持 jpg/png/webp，最大 5MB');
+    return;
+  }
+
+  foodForm.value.imageFile = file;
+  foodForm.value.previewUrl = URL.createObjectURL(file);
+}
+
+function revokeFoodPreviewUrl() {
+  if (foodForm.value.previewUrl) {
+    URL.revokeObjectURL(foodForm.value.previewUrl);
+    foodForm.value.previewUrl = '';
+  }
+}
+
+function buildFoodFormData() {
+  const payload = new FormData();
+  payload.set('mealType', foodForm.value.mealType);
+  payload.set('eatenAt', foodForm.value.eatenAt);
+  payload.set('content', foodForm.value.content);
+  payload.set('note', foodForm.value.note || '');
+  if (foodForm.value.imageFile) {
+    payload.set('image', foodForm.value.imageFile);
+  }
+  return payload;
 }
 
 async function saveRecord() {
@@ -581,6 +1184,34 @@ async function saveRecord() {
   }
 }
 
+async function saveFoodRecord() {
+  if (isSavingFoodRecord.value) return;
+  if (!foodForm.value.content.trim()) {
+    showToast('先写一下吃了什么');
+    return;
+  }
+
+  isSavingFoodRecord.value = true;
+  const wasEditing = Boolean(editingFoodRecord.value);
+
+  try {
+    if (wasEditing) {
+      await updateFoodRecordOnServer(editingFoodRecord.value.id, buildFoodFormData());
+    } else {
+      await createFoodRecordOnServer(buildFoodFormData());
+    }
+    await loadRecords(false);
+    closeFoodForm();
+    activeTab.value = 'records';
+    activeRecordKind.value = 'food';
+    showToast(wasEditing ? '饮食已更新' : '饮食已保存');
+  } catch (error) {
+    showToast(error.body?.error === 'INVALID_FOOD_IMAGE' ? '图片格式或大小不支持' : '饮食保存失败');
+  } finally {
+    isSavingFoodRecord.value = false;
+  }
+}
+
 function startEdit(record) {
   detailRecord.value = null;
   editingRecord.value = record;
@@ -591,6 +1222,21 @@ function startEdit(record) {
     note: record.note
   };
   showForm.value = true;
+}
+
+function startEditFood(record) {
+  detailFoodRecord.value = null;
+  editingFoodRecord.value = record;
+  revokeFoodPreviewUrl();
+  foodForm.value = {
+    mealType: record.mealType,
+    eatenAt: record.eatenAt,
+    content: record.content,
+    note: record.note,
+    imageFile: null,
+    previewUrl: ''
+  };
+  showFoodForm.value = true;
 }
 
 async function removeRecord(id) {
@@ -605,16 +1251,54 @@ async function removeRecord(id) {
   }
 }
 
+async function removeFoodRecord(id) {
+  try {
+    await deleteFoodRecordOnServer(id);
+    await loadRecords(false);
+    confirmFoodDelete.value = null;
+    detailFoodRecord.value = null;
+    showToast('饮食已删除');
+  } catch {
+    showToast('删除失败，请检查 API 服务');
+  }
+}
+
 async function resetRecords() {
   try {
-    await clearRecordsOnServer();
+    await Promise.all([
+      clearRecordsOnServer(),
+      clearFoodRecordsOnServer()
+    ]);
     records.value = [];
+    foodRecords.value = [];
+    revokeFoodImageUrls();
     showResetConfirm.value = false;
     activeTab.value = 'home';
     showToast('记录已清空');
   } catch {
     showToast('清空失败，请检查 API 服务');
   }
+}
+
+function revokeFoodImageUrls() {
+  Object.values(foodImageUrls.value).forEach((url) => {
+    if (url) URL.revokeObjectURL(url);
+  });
+  foodImageUrls.value = {};
+}
+
+async function refreshFoodImageUrls(nextFoodRecords) {
+  revokeFoodImageUrls();
+  const recordsWithImages = nextFoodRecords.filter((record) => record.imageKey);
+  const imageEntries = await Promise.all(recordsWithImages.map(async (record) => {
+    try {
+      const blob = await fetchFoodImageBlob(record.imageKey);
+      return [record.imageKey, URL.createObjectURL(blob)];
+    } catch {
+      return [record.imageKey, ''];
+    }
+  }));
+  foodImageUrls.value = Object.fromEntries(imageEntries.filter(([, url]) => url));
 }
 
 async function exportReport(type) {
@@ -645,10 +1329,23 @@ async function exportReport(type) {
       format: 'a4'
     });
     const pageWidth = pdf.internal.pageSize.getWidth();
+    const pageHeight = pdf.internal.pageSize.getHeight();
     const margin = 28;
     const imageWidth = pageWidth - margin * 2;
     const imageHeight = (canvas.height * imageWidth) / canvas.width;
-    pdf.addImage(canvas.toDataURL('image/png'), 'PNG', margin, margin, imageWidth, imageHeight);
+    const pageContentHeight = pageHeight - margin * 2;
+    const imageData = canvas.toDataURL('image/png');
+    let renderedHeight = 0;
+
+    pdf.addImage(imageData, 'PNG', margin, margin, imageWidth, imageHeight);
+    renderedHeight += pageContentHeight;
+
+    while (renderedHeight < imageHeight) {
+      pdf.addPage();
+      pdf.addImage(imageData, 'PNG', margin, margin - renderedHeight, imageWidth, imageHeight);
+      renderedHeight += pageContentHeight;
+    }
+
     pdf.save(`血糖记录-${Date.now()}.pdf`);
     showToast('PDF 已生成');
   } finally {

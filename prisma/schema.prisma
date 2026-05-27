@@ -8,13 +8,16 @@ datasource db {
 }
 
 model User {
-  id        String          @id @default(cuid())
-  email     String          @unique
-  name      String?
-  createdAt DateTime        @default(now())
-  updatedAt DateTime        @updatedAt
-  records   GlucoseRecord[]
-  auditLogs AuditLog[]
+  id           String          @id @default(cuid())
+  email        String          @unique
+  username     String?         @unique
+  passwordHash String?         @db.VarChar(255)
+  name         String?
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+  records      GlucoseRecord[]
+  foodRecords  FoodRecord[]
+  auditLogs    AuditLog[]
 
   @@map("users")
 }
@@ -33,6 +36,24 @@ model GlucoseRecord {
 
   @@index([userId, measuredAt])
   @@map("glucose_records")
+}
+
+model FoodRecord {
+  id        String   @id @default(cuid())
+  userId    String
+  mealType  String
+  eatenAt   DateTime
+  content   String   @db.VarChar(500)
+  note      String   @db.VarChar(500)
+  imageKey  String?  @unique
+  imageMime String?
+  imageSize Int?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, eatenAt])
+  @@map("food_records")
 }
 
 model AuditLog {

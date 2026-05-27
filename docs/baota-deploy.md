@@ -48,10 +48,22 @@ cp .env.example .env
 ```env
 DATABASE_URL="mysql://数据库用户名:数据库密码@127.0.0.1:3306/tang"
 PORT=3001
-DEFAULT_USER_ID="wife-user"
+AUTH_SECRET="请换成一串足够长的随机字符串"
+FOOD_UPLOAD_DIR="/www/wwwroot/tangtang-glucose-h5/uploads/food-images"
 ```
 
 如果 MySQL 不在同一台服务器，把 `127.0.0.1` 换成真实数据库主机。
+`AUTH_SECRET` 用来签发登录令牌，换服务器或重置它之后，已登录用户需要重新登录。
+`FOOD_UPLOAD_DIR` 是饮食图片持久化目录，建议放在项目的 `uploads/` 下或单独的数据盘目录。
+
+创建上传目录并给 Node 进程写入权限：
+
+```bash
+mkdir -p /www/wwwroot/tangtang-glucose-h5/uploads/food-images
+chown -R www:www /www/wwwroot/tangtang-glucose-h5/uploads
+```
+
+如果 PM2 使用的不是 `www` 用户，把上面的用户改成实际运行 Node API 的用户。
 
 ## 同步数据库表
 
@@ -130,5 +142,7 @@ pm2 restart tangtang-glucose-api
 ## 注意
 
 - 数据库密码只放 `.env` 或宝塔环境变量，不要提交到代码。
+- `AUTH_SECRET` 也只放 `.env` 或宝塔环境变量，不要提交真实值。
+- `uploads/` 不进 Git，重新部署、迁移服务器或做备份时要单独保留这个目录。
 - 如果之前把数据库密码发到多人可见的地方，建议在宝塔/数据库里更换一次密码。
 - 如果 Node API 和 MySQL 部署在同一台服务器，使用 `127.0.0.1` 通常比公网 IP 更快、更稳。

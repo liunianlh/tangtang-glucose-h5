@@ -17,6 +17,7 @@ model User {
   updatedAt    DateTime        @updatedAt
   records      GlucoseRecord[]
   foodRecords  FoodRecord[]
+  pressureRecords BloodPressureRecord[]
   auditLogs    AuditLog[]
 
   @@map("users")
@@ -54,6 +55,22 @@ model FoodRecord {
 
   @@index([userId, eatenAt])
   @@map("food_records")
+}
+
+model BloodPressureRecord {
+  id         String   @id @default(cuid())
+  userId     String
+  systolic   Int
+  diastolic  Int
+  pulse      Int?
+  measuredAt DateTime
+  note       String   @db.VarChar(500)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, measuredAt])
+  @@map("blood_pressure_records")
 }
 
 model AuditLog {

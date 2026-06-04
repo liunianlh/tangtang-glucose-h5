@@ -27,6 +27,16 @@ const foodRecordSchema = z.object({
   content: z.string().trim().min(1).max(500),
   note: z.string().trim().max(500).optional().default('')
 });
+const bloodPressureRecordSchema = z.object({
+  systolic: z.coerce.number().int().gte(50).lte(260),
+  diastolic: z.coerce.number().int().gte(30).lte(180),
+  pulse: z.preprocess(
+    (value) => (value === undefined || value === null || value === '' ? null : value),
+    z.coerce.number().int().gte(30).lte(220).nullable()
+  ),
+  measuredAt: z.string().trim().refine((value) => !Number.isNaN(new Date(value).getTime()), 'Invalid datetime'),
+  note: z.string().trim().max(500).optional().default('')
+});
 
 const usernameSchema = z.string().trim().min(2).max(24).regex(/^[\p{L}\p{N}_-]+$/u);
 const passwordSchema = z.string().min(6).max(72);
@@ -59,6 +69,13 @@ function sendInvalidRecord(response, details) {
 function sendInvalidFoodRecord(response, details) {
   response.status(400).json({
     error: 'INVALID_FOOD_RECORD',
+    details
+  });
+}
+
+function sendInvalidBloodPressureRecord(response, details) {
+  response.status(400).json({
+    error: 'INVALID_BLOOD_PRESSURE_RECORD',
     details
   });
 }
@@ -106,6 +123,7 @@ async function authenticatedUser(request, response, userRepository, authSecret) 
 export function createApp({
   recordRepository,
   userRepository,
+  bloodPressureRecordRepository,
   foodRecordRepository,
   foodImageStorage,
   authSecret = process.env.AUTH_SECRET || 'glucose-dev-auth-secret'
@@ -315,6 +333,86 @@ export function createApp({
       if (!user) return;
 
       await recordRepository.clearRecords(user.id);
+      response.status(204).end();
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get('/api/blood-pressure-records', async (request, response, next) => {
+    try {
+      const user = await authenticatedUser(request, response, userRepository, authSecret);
+      if (!user) return;
+
+      const records = await bloodPressureRecordRepository.listBloodPressureRecords(user.id);
+      response.json({ records });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post('/api/blood-pressure-records', async (request, response, next) => {
+    const parsed = bloodPressureRecordSchema.safeParse(request.body);
+    if (!parsed.success) {
+      sendInvalidBloodPressureRecord(response, parsed.error.flatten());
+      return;
+    }
+
+    try {
+      const user = await authenticatedUser(request, response, userRepository, authSecret);
+      if (!user) return;
+
+      const record = await bloodPressureRecordRepository.createBloodPressureRecord(user.id, parsed.data);
+      response.status(201).json(record);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.put('/api/blood-pressure-records/:id', async (request, response, next) => {
+    const parsed = bloodPressureRecordSchema.safeParse(request.body);
+    if (!parsed.success) {
+      sendInvalidBloodPressureRecord(response, parsed.error.flatten());
+      return;
+    }
+
+    try {
+      const user = await authenticatedUser(request, response, userRepository, authSecret);
+      if (!user) return;
+
+      const record = await bloodPressureRecordRepository.updateBloodPressureRecord(user.id, request.params.id, parsed.data);
+      if (!record) {
+        response.status(404).json({ error: 'BLOOD_PRESSURE_RECORD_NOT_FOUND' });
+        return;
+      }
+      response.json(record);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.delete('/api/blood-pressure-records/:id', async (request, response, next) => {
+    try {
+      const user = await authenticatedUser(request, response, userRepository, authSecret);
+      if (!user) return;
+
+      const deleted = await bloodPressureRecordRepository.deleteBloodPressureRecord(user.id, request.params.id);
+      if (!deleted) {
+        response.status(404).json({ error: 'BLOOD_PRESSURE_RECORD_NOT_FOUND' });
+        return;
+      }
+      response.status(204).end();
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.delete('/api/blood-pressure-records', async (request, response, next) => {
+    try {
+      const user = await authenticatedUser(request, response, userRepository, authSecret);
+      if (!user) return;
+
+      await bloodPressureRecordRepository.clearBloodPressureRecords(user.id);
       response.status(204).end();
     } catch (error) {
       next(error);

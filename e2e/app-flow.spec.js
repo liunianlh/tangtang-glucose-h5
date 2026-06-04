@@ -63,11 +63,28 @@ test('locks mobile viewport scale while keeping responsive layout', async ({ pag
   expect(viewportContent).toContain('viewport-fit=cover');
 });
 
+test('lets guests preview the app before login and asks for auth when saving', async ({ page }) => {
+  await page.goto('/');
+
+  await expect(page.getByRole('button', { name: /记录血糖/ })).toBeVisible();
+  await expect(page.getByText('最近血糖曲线')).toBeVisible();
+  await expect(page.getByRole('heading', { name: '登录糖糖记录本' })).toHaveCount(0);
+
+  await page.getByRole('button', { name: /记录血糖/ }).click();
+  await page.getByLabel(/血糖值/).fill('6.2');
+  await page.getByRole('button', { name: /保存记录/ }).click();
+
+  await expect(page.getByRole('heading', { name: '登录糖糖记录本' })).toBeVisible();
+  await expect(page.getByText('登录后再保存记录')).toBeVisible();
+});
+
 test('supports the full blood glucose record flow', async ({ page }) => {
   const username = uniqueUsername('wife');
   await page.goto('/');
-  await expect(page.getByRole('heading', { name: '登录糖糖记录本' })).toBeVisible();
+  await page.locator('.bottom-nav').getByRole('button', { name: '我的' }).click();
+  await expect(page.getByText('登录后保存记录')).toBeVisible();
   await page.getByRole('button', { name: '注册账号' }).click();
+  await expect(page.getByRole('heading', { name: '登录糖糖记录本' })).toBeVisible();
   await page.getByLabel('用户名').fill(username);
   await page.getByLabel('昵称').fill('我的老婆');
   await page.getByLabel('密码', { exact: true }).fill('secret123');
@@ -181,6 +198,120 @@ test('supports the full blood glucose record flow', async ({ page }) => {
   await expect(page.locator('.report-list')).toContainText('5.8 mmol/L');
   await expect(page.getByRole('button', { name: /导出图片/ })).toBeEnabled();
   await expect(page.getByRole('button', { name: /导出 PDF/ })).toBeEnabled();
+});
+
+test('supports the blood pressure monitoring flow with optional pulse', async ({ page }) => {
+  const { token } = await registerByApi(page, uniqueUsername('pressure'));
+  await page.request.delete('/api/blood-pressure-records', {
+    headers: authHeaders(token)
+  });
+
+  await page.goto('/');
+  await expect(page.getByRole('button', { name: /记录血压/ })).toBeVisible();
+
+  await page.getByRole('button', { name: /记录血压/ }).click();
+  await expect(page.getByRole('heading', { name: '记录一次血压' })).toBeVisible();
+  await page.getByLabel('收缩压').fill('118');
+  await page.getByLabel('舒张压').fill('76');
+  await page.getByLabel('测量时间').fill('2026-05-27T07:30');
+  await page.locator('.sheet').getByLabel('备注').fill('早起血压');
+  await page.getByRole('button', { name: /保存血压/ }).click();
+
+  await expect(page.getByText('血压已保存')).toBeVisible();
+  await expect(page.getByText('118/76').first()).toBeVisible();
+  await expect(page.getByText('未记录心率').first()).toBeVisible();
+
+  await page.locator('.bottom-nav').getByRole('button', { name: '首页' }).click();
+  await expect(page.getByText('最近血压')).toBeVisible();
+  await expect(page.getByRole('heading', { name: '118/76' })).toBeVisible();
+
+  await page.locator('.bottom-nav').getByRole('button', { name: '记录' }).click();
+  await page.locator('.record-switch').getByRole('button', { name: '血压记录' }).click();
+  await page.getByText('早起血压').click();
+  await expect(page.getByText('血压详情')).toBeVisible();
+  await expect(page.locator('.detail-sheet').getByText('未记录心率')).toBeVisible();
+
+  await page.getByRole('button', { name: /编辑/ }).click();
+  await page.getByLabel('收缩压').fill('121');
+  await page.getByLabel('舒张压').fill('79');
+  await page.getByLabel('心率').fill('72');
+  await page.getByRole('button', { name: /保存血压/ }).click();
+  await expect(page.getByText('血压已更新')).toBeVisible();
+  await expect(page.getByText('121/79').first()).toBeVisible();
+  await expect(page.getByText('心率 72 bpm').first()).toBeVisible();
+
+  await page.locator('.bottom-nav').getByRole('button', { name: '曲线' }).click();
+  await page.locator('.record-switch').getByRole('button', { name: '血压趋势' }).click();
+  await expect(page.locator('.pressure-systolic-line')).toBeVisible();
+  await expect(page.locator('.pressure-diastolic-line')).toBeVisible();
+  await expect(page.getByText('收缩压', { exact: true })).toBeVisible();
+  await expect(page.getByText('舒张压', { exact: true })).toBeVisible();
+
+  await page.locator('.bottom-nav').getByRole('button', { name: '导出' }).click();
+  await page.locator('.record-switch').getByRole('button', { name: '血压报告' }).click();
+  await expect(page.getByText('血压记录汇总')).toBeVisible();
+  await expect(page.locator('.report-list')).toContainText('121/79 mmHg');
+
+  const imageDownload = page.waitForEvent('download');
+  await page.getByRole('button', { name: /导出图片/ }).click();
+  await expect((await imageDownload).suggestedFilename()).toMatch(/^血压记录-\d+\.png$/);
+
+  const pdfDownload = page.waitForEvent('download');
+  await page.getByRole('button', { name: /导出 PDF/ }).click();
+  await expect((await pdfDownload).suggestedFilename()).toMatch(/^血压记录-\d+\.pdf$/);
+
+  await page.locator('.bottom-nav').getByRole('button', { name: '记录' }).click();
+  await page.locator('.record-switch').getByRole('button', { name: '血压记录' }).click();
+  const pressureRecord = page.locator('.record-card').filter({ hasText: '早起血压' });
+  await pressureRecord.getByRole('button', { name: /删除/ }).click();
+  await expect(page.getByText('删除这条血压？')).toBeVisible();
+  await page.locator('.confirm-box').getByRole('button', { name: '删除' }).click();
+  await expect(page.getByText('血压已删除')).toBeVisible();
+  await expect(page.getByText('还没有血压记录')).toBeVisible();
+});
+
+test('opens the system save sheet for image export when file sharing is available', async ({ page }) => {
+  const { token } = await registerByApi(page, uniqueUsername('share'));
+  await page.request.post('/api/records', {
+    headers: authHeaders(token),
+    data: {
+      value: 6.3,
+      period: '早餐后',
+      measuredAt: '2026-05-27T08:10',
+      note: '保存到相册'
+    }
+  });
+  await page.addInitScript(() => {
+    window.__sharedGlucoseImage = null;
+    Object.defineProperty(navigator, 'canShare', {
+      configurable: true,
+      value: (data) => Array.isArray(data?.files) && data.files.length === 1 && data.files[0]?.type === 'image/png'
+    });
+    Object.defineProperty(navigator, 'share', {
+      configurable: true,
+      value: async (data) => {
+        const file = data.files[0];
+        window.__sharedGlucoseImage = {
+          title: data.title,
+          fileName: file.name,
+          fileType: file.type,
+          fileSize: file.size
+        };
+      }
+    });
+  });
+
+  await page.goto('/');
+  await page.locator('.bottom-nav').getByRole('button', { name: '导出' }).click();
+  await page.getByRole('button', { name: /导出图片/ }).click();
+  await page.waitForFunction(() => window.__sharedGlucoseImage?.fileSize > 0);
+
+  const sharedImage = await page.evaluate(() => window.__sharedGlucoseImage);
+  expect(sharedImage.title).toBe('血糖记录');
+  expect(sharedImage.fileName).toMatch(/^血糖记录-\d+\.png$/);
+  expect(sharedImage.fileType).toBe('image/png');
+  expect(sharedImage.fileSize).toBeGreaterThan(1000);
+  await expect(page.getByText('请在系统面板中选择保存图片')).toBeVisible();
 });
 
 test('prevents duplicate record creation when save is clicked repeatedly', async ({ page }) => {

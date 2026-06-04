@@ -68,6 +68,11 @@ button:disabled {
   box-shadow: var(--shadow);
 }
 
+.auth-sheet {
+  max-height: calc(100dvh - 32px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+  overflow-y: auto;
+}
+
 .auth-loading {
   min-height: 320px;
   display: grid;
@@ -403,6 +408,10 @@ h2 {
   gap: 10px;
 }
 
+.home-actions.three-actions .glucose-action {
+  grid-column: 1 / -1;
+}
+
 .home-actions .primary-action,
 .home-actions .secondary-action {
   min-width: 0;
@@ -413,6 +422,11 @@ h2 {
 .food-action {
   color: #23645b;
   background: rgba(223, 247, 242, 0.86);
+}
+
+.pressure-action {
+  color: #5d477d;
+  background: rgba(238, 231, 255, 0.92);
 }
 
 .glucose-action svg {
@@ -494,6 +508,23 @@ h2 {
   padding: 18px;
 }
 
+.pressure-summary-card {
+  display: grid;
+  gap: 10px;
+}
+
+.pressure-summary-card h2 {
+  margin-top: 3px;
+  color: #5d477d;
+}
+
+.pressure-summary-card p {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.55;
+  font-weight: 750;
+}
+
 .chart-card,
 .full-chart-card {
   display: grid;
@@ -523,6 +554,15 @@ h2 {
   filter: drop-shadow(0 7px 8px rgba(248, 111, 159, 0.26));
 }
 
+.pressure-systolic-line {
+  stroke: #f86f9f;
+}
+
+.pressure-diastolic-line {
+  stroke: #6fb8ad;
+  stroke-width: 5;
+}
+
 .chart-reference {
   fill: none;
   stroke: var(--honey);
@@ -536,6 +576,14 @@ h2 {
   stroke: var(--peach-500);
   stroke-width: 4;
   transition: r 160ms ease, filter 160ms ease, stroke-width 160ms ease;
+}
+
+.pressure-systolic-dot {
+  stroke: #f86f9f;
+}
+
+.pressure-diastolic-dot {
+  stroke: #6fb8ad;
 }
 
 .chart-point.active .chart-dot {
@@ -652,6 +700,35 @@ h2 {
   font-weight: 850;
 }
 
+.pressure-legend {
+  display: flex;
+  gap: 14px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.pressure-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.pressure-legend i {
+  width: 22px;
+  height: 4px;
+  border-radius: 999px;
+  display: inline-block;
+}
+
+.systolic-mark {
+  background: #f86f9f;
+}
+
+.diastolic-mark {
+  background: #6fb8ad;
+}
+
 .chart-empty {
   min-height: 176px;
   border-radius: 24px;
@@ -693,11 +770,15 @@ h2 {
 
 .record-switch {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(var(--switch-columns, 2), minmax(0, 1fr));
   gap: 7px;
   border-radius: 20px;
   padding: 6px;
   background: rgba(255, 255, 255, 0.62);
+}
+
+.record-switch.three-way {
+  --switch-columns: 3;
 }
 
 .record-switch button {
@@ -728,6 +809,20 @@ h2 {
 
 .food-record-card {
   grid-template-columns: 58px minmax(0, 1fr) 58px;
+}
+
+.pressure-record-card {
+  grid-template-columns: 56px minmax(0, 1fr) 116px;
+}
+
+.pressure-record-card strong {
+  color: #5d477d;
+  font-size: 24px;
+}
+
+.pressure-date {
+  color: #5d477d;
+  background: #eee7ff;
 }
 
 .food-thumb {
@@ -1001,6 +1096,21 @@ h2 {
   margin-top: 16px;
 }
 
+.guest-profile-card {
+  display: grid;
+  gap: 16px;
+}
+
+.guest-avatar {
+  background: linear-gradient(135deg, #8dd9cd, #f86f9f);
+}
+
+.guest-auth-actions {
+  display: grid;
+  grid-template-columns: 1.05fr 0.95fr;
+  gap: 10px;
+}
+
 .profile-edit-form {
   display: grid;
   gap: 10px;
@@ -1187,6 +1297,10 @@ h2 {
   overflow-x: hidden;
 }
 
+.auth-backdrop {
+  z-index: 30;
+}
+
 .sheet,
 .confirm-box {
   width: min(100%, 430px);
@@ -1274,6 +1388,12 @@ h2 {
 .value-input {
   position: relative;
   min-width: 0;
+}
+
+.pressure-input-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
 }
 
 .value-input input {
@@ -1377,6 +1497,11 @@ h2 {
   font-size: 58px;
   line-height: 1;
   font-weight: 950;
+}
+
+.pressure-detail-value {
+  color: #5d477d;
+  font-size: 48px;
 }
 
 .detail-value span {

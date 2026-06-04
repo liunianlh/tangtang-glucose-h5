@@ -1,10 +1,10 @@
 import { PrismaClient } from '@prisma/client';
-import { toLocalInputValue } from '../../src/lib/records.js';
+import { normalizeGlucoseValue, toLocalInputValue } from '../../src/lib/records.js';
 
 function toApiRecord(record) {
   return {
     id: record.id,
-    value: Number(record.value),
+    value: normalizeGlucoseValue(record.value),
     unit: record.unit,
     period: record.period,
     measuredAt: toLocalInputValue(record.measuredAt),
@@ -41,7 +41,7 @@ export function createPrismaRecordRepository(prisma = new PrismaClient()) {
       const record = await prisma.glucoseRecord.create({
         data: {
           userId,
-          value: input.value,
+          value: normalizeGlucoseValue(input.value),
           unit: 'mmol/L',
           period: input.period,
           measuredAt: new Date(input.measuredAt),
@@ -60,7 +60,7 @@ export function createPrismaRecordRepository(prisma = new PrismaClient()) {
       const record = await prisma.glucoseRecord.update({
         where: { id },
         data: {
-          value: input.value,
+          value: normalizeGlucoseValue(input.value),
           period: input.period,
           measuredAt: new Date(input.measuredAt),
           note: input.note || ''

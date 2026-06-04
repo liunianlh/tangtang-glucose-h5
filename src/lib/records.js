@@ -7,6 +7,15 @@ export const PERIODS = ['空腹', '早餐后', '午饭前', '午餐后', '晚饭
 
 const pad = (value) => String(value).padStart(2, '0');
 
+export function normalizeGlucoseValue(value) {
+  const numericValue = Number(value);
+  return Number((Math.round((numericValue + Number.EPSILON) * 10) / 10).toFixed(1));
+}
+
+export function formatGlucoseValue(value) {
+  return normalizeGlucoseValue(value).toFixed(1);
+}
+
 export function toLocalInputValue(date = new Date()) {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
@@ -21,7 +30,7 @@ export function createRecord({
 }) {
   return {
     id: id || `record-${Date.now()}-${Math.random().toString(16).slice(2)}`,
-    value: Number(value),
+    value: normalizeGlucoseValue(value),
     unit,
     period,
     measuredAt,
@@ -69,6 +78,78 @@ export function applyRecordMutation(records, nextRecord) {
 
 export function deleteRecord(records, id) {
   return sortRecordsByTime(records.filter((record) => record.id !== id));
+}
+
+export function createBloodPressureRecord({
+  id,
+  systolic,
+  diastolic,
+  pulse = null,
+  measuredAt = toLocalInputValue(),
+  note = ''
+}) {
+  const numericPulse = pulse === null || pulse === undefined || pulse === '' ? null : Number(pulse);
+
+  return {
+    id: id || `pressure-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    systolic: Number(systolic),
+    diastolic: Number(diastolic),
+    pulse: numericPulse,
+    measuredAt,
+    note: note.trim()
+  };
+}
+
+export function sortBloodPressureRecordsByTime(records) {
+  return [...records].sort((left, right) => new Date(right.measuredAt) - new Date(left.measuredAt));
+}
+
+export function getLatestBloodPressureRecord(records) {
+  return sortBloodPressureRecordsByTime(records)[0] || null;
+}
+
+export function getBloodPressureStats(records) {
+  if (!records.length) {
+    return {
+      count: 0,
+      averageSystolic: 0,
+      averageDiastolic: 0,
+      highestSystolic: 0,
+      lowestDiastolic: 0,
+      averagePulse: 0
+    };
+  }
+
+  const systolicValues = records.map((record) => Number(record.systolic));
+  const diastolicValues = records.map((record) => Number(record.diastolic));
+  const pulseValues = records
+    .map((record) => record.pulse)
+    .filter((pulse) => pulse !== null && pulse !== undefined && pulse !== '')
+    .map(Number);
+
+  const average = (values) => Number((values.reduce((sum, value) => sum + value, 0) / values.length).toFixed(0));
+
+  return {
+    count: records.length,
+    averageSystolic: average(systolicValues),
+    averageDiastolic: average(diastolicValues),
+    highestSystolic: Math.max(...systolicValues),
+    lowestDiastolic: Math.min(...diastolicValues),
+    averagePulse: pulseValues.length ? average(pulseValues) : 0
+  };
+}
+
+export function applyBloodPressureRecordMutation(records, nextRecord) {
+  const exists = records.some((record) => record.id === nextRecord.id);
+  const nextRecords = exists
+    ? records.map((record) => (record.id === nextRecord.id ? nextRecord : record))
+    : [nextRecord, ...records];
+
+  return sortBloodPressureRecordsByTime(nextRecords);
+}
+
+export function deleteBloodPressureRecord(records, id) {
+  return sortBloodPressureRecordsByTime(records.filter((record) => record.id !== id));
 }
 
 export function formatDateTime(value) {

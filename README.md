@@ -1,10 +1,10 @@
 # 糖糖记录本
 
-血糖记录 H5 应用。当前前端为 Vue 3 + Vite，后端为 Node.js + Express，正式数据层预留 MySQL + Prisma。
+血糖、血压和饮食记录 H5 应用。当前前端为 Vue 3 + Vite，后端为 Node.js + Express，正式数据层预留 MySQL + Prisma。
 
 ## 技术栈
 
-- 前端：Vue 3、Vite、SVG 自绘曲线、html2canvas、jsPDF
+- 前端：Vue 3、Vite、SVG 自绘血糖/血压曲线、html2canvas、jsPDF
 - 后端：Node.js、Express、Zod
 - 数据库：MySQL 8 推荐，Prisma ORM
 - 测试：Vitest、Playwright
@@ -87,6 +87,11 @@ npm run dev -- --port 5173
 - `PUT /api/records/:id`
 - `DELETE /api/records/:id`
 - `DELETE /api/records`
+- `GET /api/blood-pressure-records`
+- `POST /api/blood-pressure-records`
+- `PUT /api/blood-pressure-records/:id`
+- `DELETE /api/blood-pressure-records/:id`
+- `DELETE /api/blood-pressure-records`
 - `GET /api/food-records`
 - `POST /api/food-records`
 - `PUT /api/food-records/:id`
@@ -106,7 +111,7 @@ npm run dev -- --port 5173
 }
 ```
 
-注册和登录前先调用 `GET /api/auth/captcha` 获取题目和 `captchaToken`，提交账号信息时带上用户填写的 `captchaAnswer`。登录成功后会返回 `token`。血糖记录接口需要带上：
+注册和登录前先调用 `GET /api/auth/captcha` 获取题目和 `captchaToken`，提交账号信息时带上用户填写的 `captchaAnswer`。登录成功后会返回 `token`。血糖、血压和饮食记录接口需要带上：
 
 ```text
 Authorization: Bearer <token>

@@ -6,69 +6,6 @@
       <p>正在确认登录状态...</p>
     </section>
 
-    <section v-else-if="!currentUser" class="auth-card page-enter" aria-label="账号登录">
-      <div class="auth-brand">
-        <div>
-          <p class="eyebrow">多用户血糖记录</p>
-          <h1>登录糖糖记录本</h1>
-        </div>
-        <div class="auth-mark" aria-hidden="true">
-          <Sparkles :size="25" />
-        </div>
-      </div>
-
-      <div class="auth-switch" role="tablist" aria-label="登录或注册">
-        <button type="button" :class="{ active: authMode === 'login' }" @click="switchAuthMode('login')">登录</button>
-        <button type="button" :class="{ active: authMode === 'register' }" @click="switchAuthMode('register')">注册账号</button>
-      </div>
-
-      <form class="auth-form" @submit.prevent="submitAuth">
-        <label class="field">
-          <span>用户名</span>
-          <input v-model.trim="authForm.username" autocomplete="username" placeholder="例如 tangtang" required />
-        </label>
-
-        <label v-if="authMode === 'register'" class="field">
-          <span>昵称</span>
-          <input v-model.trim="authForm.displayName" autocomplete="nickname" placeholder="比如 我的老婆" required />
-        </label>
-
-        <label class="field">
-          <span>密码</span>
-          <input
-            v-model="authForm.password"
-            type="password"
-            :autocomplete="authMode === 'login' ? 'current-password' : 'new-password'"
-            placeholder="至少 6 位"
-            required
-          />
-        </label>
-
-        <label v-if="authMode === 'register'" class="field">
-          <span>确认密码</span>
-          <input v-model="authForm.confirmPassword" type="password" autocomplete="new-password" placeholder="再输入一次" required />
-        </label>
-
-        <label class="field captcha-field">
-          <span>验证码</span>
-          <div class="captcha-control">
-            <strong class="captcha-question" aria-live="polite">{{ captchaChallenge?.question || '加载中...' }}</strong>
-            <button class="icon-button" type="button" aria-label="刷新验证码" :disabled="isLoadingCaptcha || isAuthenticating" @click="refreshCaptcha">
-              <RefreshCw :size="18" />
-            </button>
-          </div>
-          <input v-model.trim="authForm.captchaAnswer" aria-label="验证码答案" inputmode="numeric" autocomplete="off" placeholder="输入答案" required />
-        </label>
-
-        <p v-if="authError" class="auth-error">{{ authError }}</p>
-
-        <button class="primary-action" type="submit" :disabled="isAuthenticating || isLoadingCaptcha || !captchaChallenge">
-          <Check :size="20" />
-          {{ isAuthenticating ? '处理中...' : authMode === 'login' ? '登录' : '注册并进入' }}
-        </button>
-      </form>
-    </section>
-
     <section v-else class="phone-frame" aria-label="糖糖记录本">
       <div class="screen-scroll">
         <header class="app-header">
@@ -84,7 +21,7 @@
           <div class="hero-panel">
             <div class="hero-copy">
               <span class="section-label">最近一次 · {{ latestRecord?.period || '还未记录' }}</span>
-              <strong class="hero-value">{{ latestRecord ? latestRecord.value : '--' }}</strong>
+              <strong class="hero-value">{{ latestRecord ? formatGlucoseValue(latestRecord.value) : '--' }}</strong>
               <span class="hero-unit">{{ latestRecord ? latestRecord.unit : 'mmol/L' }}</span>
               <p>{{ latestRecord ? `${formatDateTime(latestRecord.measuredAt)} · ${latestRecord.note || '无备注'}` : '先记录一次，曲线会自动出现。' }}</p>
             </div>
@@ -93,10 +30,14 @@
             </div>
           </div>
 
-          <div class="home-actions">
+          <div class="home-actions three-actions">
             <button class="primary-action glucose-action" type="button" @click="openNewRecord">
               <HeartPulse :size="21" />
               记录血糖
+            </button>
+            <button class="secondary-action pressure-action" type="button" @click="openNewBloodPressureRecord">
+              <Activity :size="21" />
+              记录血压
             </button>
             <button class="secondary-action food-action" type="button" @click="openNewFoodRecord">
               <Utensils :size="21" />
@@ -111,13 +52,29 @@
             </article>
             <article>
               <span>平均值</span>
-              <strong>{{ stats.average || '--' }}</strong>
+              <strong>{{ formattedStats.average }}</strong>
             </article>
             <article>
               <span>最高值</span>
-              <strong>{{ stats.highest || '--' }}</strong>
+              <strong>{{ formattedStats.highest }}</strong>
             </article>
           </div>
+
+          <section class="card pressure-summary-card">
+            <div class="card-heading">
+              <div>
+                <span class="section-label">最近血压</span>
+                <h2>{{ latestBloodPressureRecord ? `${latestBloodPressureRecord.systolic}/${latestBloodPressureRecord.diastolic}` : '--/--' }}</h2>
+              </div>
+              <button class="text-button" type="button" @click="openNewBloodPressureRecord">记录</button>
+            </div>
+            <p v-if="latestBloodPressureRecord">
+              {{ formatDateTime(latestBloodPressureRecord.measuredAt) }}
+              <span v-if="latestBloodPressureRecord.pulse"> · 心率 {{ latestBloodPressureRecord.pulse }} bpm</span>
+              <span> · {{ latestBloodPressureRecord.note || '无备注' }}</span>
+            </p>
+            <p v-else>记录一次血压后，这里会显示最近读数。</p>
+          </section>
 
           <section class="card chart-card">
             <div class="card-heading">
@@ -147,38 +104,70 @@
               <p class="eyebrow">趋势曲线</p>
               <h2>看看最近变化</h2>
             </div>
-            <button class="soft-button" type="button" @click="openNewRecord">
+            <button class="soft-button" type="button" @click="openActiveChartRecord">
               <Plus :size="16" />
               新增
             </button>
           </div>
 
-          <section class="card full-chart-card">
-            <GlucoseChart :records="records" :reference-limit="chartReferenceLimit" />
-            <div class="range-note">
-              <span></span>
-              参考上限 {{ formattedChartReferenceLimit }} mmol/L，仅作日常记录参考，请以医生建议为准。
-            </div>
-          </section>
-
-          <div class="summary-grid">
-            <article>
-              <span>最低</span>
-              <strong>{{ stats.lowest || '--' }}</strong>
-            </article>
-            <article>
-              <span>平均</span>
-              <strong>{{ stats.average || '--' }}</strong>
-            </article>
-            <article>
-              <span>最高</span>
-              <strong>{{ stats.highest || '--' }}</strong>
-            </article>
+          <div class="record-switch" role="tablist" aria-label="曲线类型">
+            <button type="button" :class="{ active: activeChartKind === 'glucose' }" @click="activeChartKind = 'glucose'">血糖趋势</button>
+            <button type="button" :class="{ active: activeChartKind === 'pressure' }" @click="activeChartKind = 'pressure'">血压趋势</button>
           </div>
+
+          <template v-if="activeChartKind === 'glucose'">
+            <section class="card full-chart-card">
+              <GlucoseChart :records="records" :reference-limit="chartReferenceLimit" />
+              <div class="range-note">
+                <span></span>
+                参考上限 {{ formattedChartReferenceLimit }} mmol/L，仅作日常记录参考，请以医生建议为准。
+              </div>
+            </section>
+
+            <div class="summary-grid">
+              <article>
+                <span>最低</span>
+                <strong>{{ formattedStats.lowest }}</strong>
+              </article>
+              <article>
+                <span>平均</span>
+                <strong>{{ formattedStats.average }}</strong>
+              </article>
+              <article>
+                <span>最高</span>
+                <strong>{{ formattedStats.highest }}</strong>
+              </article>
+            </div>
+          </template>
+
+          <template v-else>
+            <section class="card full-chart-card">
+              <BloodPressureChart :records="bloodPressureRecords" />
+              <div class="pressure-legend" aria-label="血压曲线说明">
+                <span><i class="systolic-mark"></i>收缩压</span>
+                <span><i class="diastolic-mark"></i>舒张压</span>
+              </div>
+            </section>
+
+            <div class="summary-grid">
+              <article>
+                <span>平均收缩压</span>
+                <strong>{{ bloodPressureStats.averageSystolic || '--' }}</strong>
+              </article>
+              <article>
+                <span>平均舒张压</span>
+                <strong>{{ bloodPressureStats.averageDiastolic || '--' }}</strong>
+              </article>
+              <article>
+                <span>平均心率</span>
+                <strong>{{ bloodPressureStats.averagePulse || '--' }}</strong>
+              </article>
+            </div>
+          </template>
 
           <section class="card insight-card">
             <span class="section-label">小提示</span>
-            <p>{{ chartInsight }}</p>
+            <p>{{ activeChartInsight }}</p>
           </section>
         </section>
 
@@ -186,16 +175,17 @@
           <div class="page-title">
             <div>
               <p class="eyebrow">历史记录</p>
-              <h2>{{ activeRecordKind === 'glucose' ? `${records.length} 条血糖记录` : `${foodRecords.length} 条饮食记录` }}</h2>
+              <h2>{{ recordPageTitle }}</h2>
             </div>
-            <button class="soft-button" type="button" @click="activeRecordKind === 'glucose' ? openNewRecord() : openNewFoodRecord()">
+            <button class="soft-button" type="button" @click="openActiveRecordForm">
               <Plus :size="16" />
               新增
             </button>
           </div>
 
-          <div class="record-switch" role="tablist" aria-label="记录类型">
+          <div class="record-switch three-way" role="tablist" aria-label="记录类型">
             <button type="button" :class="{ active: activeRecordKind === 'glucose' }" @click="activeRecordKind = 'glucose'">血糖记录</button>
+            <button type="button" :class="{ active: activeRecordKind === 'pressure' }" @click="activeRecordKind = 'pressure'">血压记录</button>
             <button type="button" :class="{ active: activeRecordKind === 'food' }" @click="activeRecordKind = 'food'">饮食记录</button>
           </div>
 
@@ -210,12 +200,37 @@
                 <p>{{ record.note || '没有备注' }}</p>
               </div>
               <div class="record-actions">
-                <strong>{{ record.value }}</strong>
+                <strong>{{ formatGlucoseValue(record.value) }}</strong>
                 <button
                   class="record-delete-button"
                   type="button"
                   :aria-label="`删除${record.period}记录`"
                   @click.stop="confirmDelete = record"
+                >
+                  <Trash2 :size="16" />
+                </button>
+              </div>
+            </article>
+          </div>
+
+          <div v-else-if="activeRecordKind === 'pressure' && bloodPressureRecords.length" class="record-list">
+            <article v-for="record in sortedBloodPressureRecords" :key="record.id" class="record-card pressure-record-card" @click="detailBloodPressureRecord = record">
+              <div class="record-date pressure-date">
+                <span>{{ dayLabel(record.measuredAt) }}</span>
+                <small>{{ timeLabel(record.measuredAt) }}</small>
+              </div>
+              <div class="record-info">
+                <span>{{ formatDateTime(record.measuredAt) }}</span>
+                <p>{{ record.note || '没有备注' }}</p>
+              </div>
+              <div class="record-actions">
+                <strong>{{ record.systolic }}/{{ record.diastolic }}</strong>
+                <small>{{ pressurePulseText(record) }}</small>
+                <button
+                  class="record-delete-button"
+                  type="button"
+                  :aria-label="`删除${record.systolic}/${record.diastolic}血压记录`"
+                  @click.stop="confirmBloodPressureDelete = record"
                 >
                   <Trash2 :size="16" />
                 </button>
@@ -249,8 +264,8 @@
 
           <EmptyState
             v-else
-            :title="activeRecordKind === 'glucose' ? '还没有血糖记录' : '还没有饮食记录'"
-            :body="activeRecordKind === 'glucose' ? '点一下新增按钮，先记录最近一次测量。' : '拍一张饭菜，顺手记下吃了什么。'"
+            :title="emptyRecordTitle"
+            :body="emptyRecordBody"
           />
         </section>
 
@@ -260,43 +275,75 @@
               <p class="eyebrow">导出中心</p>
               <h2>保存这份记录</h2>
             </div>
-            <button class="soft-button" type="button" @click="openNewRecord">
+            <button class="soft-button" type="button" @click="openActiveReportRecord">
               <Plus :size="16" />
               补一条
             </button>
           </div>
 
+          <div class="record-switch" role="tablist" aria-label="报告类型">
+            <button type="button" :class="{ active: activeReportKind === 'glucose' }" @click="activeReportKind = 'glucose'">血糖报告</button>
+            <button type="button" :class="{ active: activeReportKind === 'pressure' }" @click="activeReportKind = 'pressure'">血压报告</button>
+          </div>
+
           <section ref="reportRef" class="report-card">
-            <div class="report-head">
-              <div>
-                <span>使用人：{{ currentUser.displayName }}</span>
-                <h3>血糖记录汇总</h3>
+            <template v-if="activeReportKind === 'glucose'">
+              <div class="report-head">
+                <div>
+                  <span>使用人：{{ currentUser?.displayName || '访客预览' }}</span>
+                  <h3>血糖记录汇总</h3>
+                </div>
+                <div class="report-badge">{{ stats.count }} 条</div>
               </div>
-              <div class="report-badge">{{ stats.count }} 条</div>
-            </div>
-            <div class="report-stats">
-              <div><span>平均</span><strong>{{ stats.average || '--' }}</strong></div>
-              <div><span>最高</span><strong>{{ stats.highest || '--' }}</strong></div>
-              <div><span>最低</span><strong>{{ stats.lowest || '--' }}</strong></div>
-            </div>
-            <GlucoseChart :records="records" :reference-limit="chartReferenceLimit" compact />
-            <div class="report-list">
-              <div v-for="record in sortedRecords" :key="record.id">
-                <span>
-                  <b>{{ formatDateTime(record.measuredAt) }} · {{ record.period }}</b>
-                  <small>{{ record.note || '无备注' }}</small>
-                </span>
-                <strong>{{ record.value }} {{ record.unit }}</strong>
+              <div class="report-stats">
+                <div><span>平均</span><strong>{{ formattedStats.average }}</strong></div>
+                <div><span>最高</span><strong>{{ formattedStats.highest }}</strong></div>
+                <div><span>最低</span><strong>{{ formattedStats.lowest }}</strong></div>
               </div>
-            </div>
+              <GlucoseChart :records="records" :reference-limit="chartReferenceLimit" compact />
+              <div class="report-list">
+                <div v-for="record in sortedRecords" :key="record.id">
+                  <span>
+                    <b>{{ formatDateTime(record.measuredAt) }} · {{ record.period }}</b>
+                    <small>{{ record.note || '无备注' }}</small>
+                  </span>
+                  <strong>{{ formatGlucoseValue(record.value) }} {{ record.unit }}</strong>
+                </div>
+              </div>
+            </template>
+
+            <template v-else>
+              <div class="report-head">
+                <div>
+                  <span>使用人：{{ currentUser?.displayName || '访客预览' }}</span>
+                  <h3>血压记录汇总</h3>
+                </div>
+                <div class="report-badge">{{ bloodPressureStats.count }} 条</div>
+              </div>
+              <div class="report-stats">
+                <div><span>平均收缩压</span><strong>{{ bloodPressureStats.averageSystolic || '--' }}</strong></div>
+                <div><span>平均舒张压</span><strong>{{ bloodPressureStats.averageDiastolic || '--' }}</strong></div>
+                <div><span>平均心率</span><strong>{{ bloodPressureStats.averagePulse || '--' }}</strong></div>
+              </div>
+              <BloodPressureChart :records="bloodPressureRecords" compact />
+              <div class="report-list">
+                <div v-for="record in sortedBloodPressureRecords" :key="record.id">
+                  <span>
+                    <b>{{ formatDateTime(record.measuredAt) }}</b>
+                    <small>{{ record.note || pressurePulseText(record) }}</small>
+                  </span>
+                  <strong>{{ record.systolic }}/{{ record.diastolic }} mmHg</strong>
+                </div>
+              </div>
+            </template>
           </section>
 
           <div class="export-actions">
-            <button class="primary-action" type="button" :disabled="isExporting || !records.length" @click="exportReport('png')">
+            <button class="primary-action" type="button" :disabled="isExporting || !canExportActiveReport" @click="exportReport('png')">
               <ImageDown :size="20" />
               导出图片
             </button>
-            <button class="secondary-action" type="button" :disabled="isExporting || !records.length" @click="exportReport('pdf')">
+            <button class="secondary-action" type="button" :disabled="isExporting || !canExportActiveReport" @click="exportReport('pdf')">
               <FileText :size="20" />
               导出 PDF
             </button>
@@ -309,11 +356,31 @@
           <div class="page-title">
             <div>
               <p class="eyebrow">个人中心</p>
-              <h2>我的糖糖账户</h2>
+              <h2>{{ currentUser ? '我的糖糖账户' : '先逛逛也可以' }}</h2>
             </div>
           </div>
 
-          <section class="profile-card">
+          <section v-if="!currentUser" class="profile-card guest-profile-card">
+            <div class="profile-main">
+              <div class="profile-avatar guest-avatar" aria-hidden="true">
+                <span>糖</span>
+              </div>
+              <div class="profile-copy">
+                <span>访客预览</span>
+                <h3>登录后保存记录</h3>
+                <p>首页、曲线和表单都能先看看；保存数据时再登录。</p>
+              </div>
+            </div>
+            <div class="guest-auth-actions">
+              <button class="primary-action compact" type="button" @click="openAuthModal('login')">
+                <Check :size="18" />
+                登录
+              </button>
+              <button class="secondary-action compact" type="button" @click="openAuthModal('register')">注册账号</button>
+            </div>
+          </section>
+
+          <section v-if="currentUser" class="profile-card">
             <div class="profile-main">
               <div class="profile-avatar" :style="avatarStyle" aria-hidden="true">
                 <span>{{ avatarInitial }}</span>
@@ -344,14 +411,14 @@
             </form>
           </section>
 
-          <section class="profile-stats">
+          <section v-if="currentUser" class="profile-stats">
             <article>
               <span>记录数</span>
               <strong>{{ stats.count }}</strong>
             </article>
             <article>
               <span>平均值</span>
-              <strong>{{ stats.average || '--' }}</strong>
+              <strong>{{ formattedStats.average }}</strong>
             </article>
             <article>
               <span>参考线</span>
@@ -359,7 +426,7 @@
             </article>
           </section>
 
-          <section class="card settings-list">
+          <section v-if="currentUser" class="card settings-list">
             <div class="settings-item">
               <span>账号</span>
               <strong>{{ currentUser.username }}</strong>
@@ -387,12 +454,12 @@
             </label>
           </section>
 
-          <button class="secondary-action" type="button" @click="logout">
+          <button v-if="currentUser" class="secondary-action" type="button" @click="logout">
             <X :size="19" />
             退出登录
           </button>
 
-          <button class="secondary-action danger" type="button" @click="showResetConfirm = true">
+          <button v-if="currentUser" class="secondary-action danger" type="button" @click="showResetConfirm = true">
             <Trash2 :size="19" />
             清空全部记录
           </button>
@@ -408,6 +475,71 @@
     </section>
 
     <Teleport to="body">
+      <div v-if="showAuthModal" class="modal-backdrop auth-backdrop" @click.self="!isAuthenticating && closeAuthModal()">
+        <section class="auth-card auth-sheet page-enter" aria-label="账号登录">
+          <div class="auth-brand">
+            <div>
+              <p class="eyebrow">多用户血糖记录</p>
+              <h1>登录糖糖记录本</h1>
+            </div>
+            <button class="icon-button" type="button" aria-label="关闭登录" :disabled="isAuthenticating" @click="closeAuthModal">
+              <X :size="20" />
+            </button>
+          </div>
+
+          <div class="auth-switch" role="tablist" aria-label="登录或注册">
+            <button type="button" :class="{ active: authMode === 'login' }" @click="switchAuthMode('login')">登录</button>
+            <button type="button" :class="{ active: authMode === 'register' }" @click="switchAuthMode('register')">注册账号</button>
+          </div>
+
+          <form class="auth-form" @submit.prevent="submitAuth">
+            <label class="field">
+              <span>用户名</span>
+              <input v-model.trim="authForm.username" autocomplete="username" placeholder="例如 tangtang" required />
+            </label>
+
+            <label v-if="authMode === 'register'" class="field">
+              <span>昵称</span>
+              <input v-model.trim="authForm.displayName" autocomplete="nickname" placeholder="比如 我的老婆" required />
+            </label>
+
+            <label class="field">
+              <span>密码</span>
+              <input
+                v-model="authForm.password"
+                type="password"
+                :autocomplete="authMode === 'login' ? 'current-password' : 'new-password'"
+                placeholder="至少 6 位"
+                required
+              />
+            </label>
+
+            <label v-if="authMode === 'register'" class="field">
+              <span>确认密码</span>
+              <input v-model="authForm.confirmPassword" type="password" autocomplete="new-password" placeholder="再输入一次" required />
+            </label>
+
+            <label class="field captcha-field">
+              <span>验证码</span>
+              <div class="captcha-control">
+                <strong class="captcha-question" aria-live="polite">{{ captchaChallenge?.question || '加载中...' }}</strong>
+                <button class="icon-button" type="button" aria-label="刷新验证码" :disabled="isLoadingCaptcha || isAuthenticating" @click="refreshCaptcha">
+                  <RefreshCw :size="18" />
+                </button>
+              </div>
+              <input v-model.trim="authForm.captchaAnswer" aria-label="验证码答案" inputmode="numeric" autocomplete="off" placeholder="输入答案" required />
+            </label>
+
+            <p v-if="authError" class="auth-error">{{ authError }}</p>
+
+            <button class="primary-action" type="submit" :disabled="isAuthenticating || isLoadingCaptcha || !captchaChallenge">
+              <Check :size="20" />
+              {{ isAuthenticating ? '处理中...' : authMode === 'login' ? '登录' : '注册并进入' }}
+            </button>
+          </form>
+        </section>
+      </div>
+
       <div v-if="showForm" class="modal-backdrop" @click.self="!isSavingRecord && closeForm()">
         <form class="sheet" :aria-busy="isSavingRecord" @submit.prevent="saveRecord">
           <div class="sheet-handle"></div>
@@ -446,6 +578,59 @@
           <button class="primary-action" type="submit" :disabled="isSavingRecord">
             <Check :size="20" />
             {{ isSavingRecord ? '保存中...' : '保存记录' }}
+          </button>
+        </form>
+      </div>
+
+      <div v-if="showBloodPressureForm" class="modal-backdrop" @click.self="!isSavingBloodPressureRecord && closeBloodPressureForm()">
+        <form class="sheet" :aria-busy="isSavingBloodPressureRecord" @submit.prevent="saveBloodPressureRecord">
+          <div class="sheet-handle"></div>
+          <div class="sheet-head">
+            <h2>{{ editingBloodPressureRecord ? '编辑血压' : '记录一次血压' }}</h2>
+            <button class="icon-button" type="button" aria-label="关闭" :disabled="isSavingBloodPressureRecord" @click="closeBloodPressureForm">
+              <X :size="20" />
+            </button>
+          </div>
+
+          <div class="pressure-input-grid">
+            <label class="field">
+              <span>收缩压</span>
+              <div class="value-input">
+                <input v-model="bloodPressureForm.systolic" aria-label="收缩压" type="number" inputmode="numeric" min="50" max="260" step="1" placeholder="120" required />
+                <em>mmHg</em>
+              </div>
+            </label>
+
+            <label class="field">
+              <span>舒张压</span>
+              <div class="value-input">
+                <input v-model="bloodPressureForm.diastolic" aria-label="舒张压" type="number" inputmode="numeric" min="30" max="180" step="1" placeholder="80" required />
+                <em>mmHg</em>
+              </div>
+            </label>
+          </div>
+
+          <label class="field">
+            <span>心率（可选）</span>
+            <div class="value-input">
+              <input v-model="bloodPressureForm.pulse" aria-label="心率" type="number" inputmode="numeric" min="30" max="220" step="1" placeholder="72" />
+              <em>bpm</em>
+            </div>
+          </label>
+
+          <label class="field">
+            <span>测量时间</span>
+            <input v-model="bloodPressureForm.measuredAt" type="datetime-local" required />
+          </label>
+
+          <label class="field">
+            <span>备注</span>
+            <textarea v-model="bloodPressureForm.note" rows="3" maxlength="500" placeholder="比如早起、睡前、运动后"></textarea>
+          </label>
+
+          <button class="primary-action" type="submit" :disabled="isSavingBloodPressureRecord">
+            <Check :size="20" />
+            {{ isSavingBloodPressureRecord ? '保存中...' : '保存血压' }}
           </button>
         </form>
       </div>
@@ -513,7 +698,7 @@
               <X :size="20" />
             </button>
           </div>
-          <div class="detail-value">{{ detailRecord.value }} <span>{{ detailRecord.unit }}</span></div>
+          <div class="detail-value">{{ formatGlucoseValue(detailRecord.value) }} <span>{{ detailRecord.unit }}</span></div>
           <p>{{ detailRecord.period }} · {{ formatDateTime(detailRecord.measuredAt) }}</p>
           <div class="detail-note">{{ detailRecord.note || '没有备注' }}</div>
           <div class="split-actions">
@@ -522,6 +707,33 @@
               编辑
             </button>
             <button class="secondary-action danger" type="button" @click="confirmDelete = detailRecord">
+              <Trash2 :size="18" />
+              删除
+            </button>
+          </div>
+        </section>
+      </div>
+
+      <div v-if="detailBloodPressureRecord" class="modal-backdrop" @click.self="detailBloodPressureRecord = null">
+        <section class="sheet detail-sheet">
+          <div class="sheet-handle"></div>
+          <div class="sheet-head">
+            <h2>血压详情</h2>
+            <button class="icon-button" type="button" aria-label="关闭" @click="detailBloodPressureRecord = null">
+              <X :size="20" />
+            </button>
+          </div>
+          <div class="detail-value pressure-detail-value">
+            {{ detailBloodPressureRecord.systolic }}/{{ detailBloodPressureRecord.diastolic }} <span>mmHg</span>
+          </div>
+          <p>{{ formatDateTime(detailBloodPressureRecord.measuredAt) }} · {{ pressurePulseText(detailBloodPressureRecord) }}</p>
+          <div class="detail-note">{{ detailBloodPressureRecord.note || '没有备注' }}</div>
+          <div class="split-actions">
+            <button class="secondary-action" type="button" @click="startEditBloodPressure(detailBloodPressureRecord)">
+              <Pencil :size="18" />
+              编辑
+            </button>
+            <button class="secondary-action danger" type="button" @click="confirmBloodPressureDelete = detailBloodPressureRecord">
               <Trash2 :size="18" />
               删除
             </button>
@@ -580,10 +792,21 @@
         </section>
       </div>
 
+      <div v-if="confirmBloodPressureDelete" class="modal-backdrop" @click.self="confirmBloodPressureDelete = null">
+        <section class="confirm-box">
+          <h2>删除这条血压？</h2>
+          <p>删除后首页、曲线、历史列表和导出数据会同步更新。</p>
+          <div class="split-actions">
+            <button class="secondary-action" type="button" @click="confirmBloodPressureDelete = null">取消</button>
+            <button class="secondary-action danger solid-danger" type="button" @click="removeBloodPressureRecord(confirmBloodPressureDelete.id)">删除</button>
+          </div>
+        </section>
+      </div>
+
       <div v-if="showResetConfirm" class="modal-backdrop" @click.self="showResetConfirm = false">
         <section class="confirm-box">
           <h2>清空全部记录？</h2>
-          <p>会移除当前使用人的所有血糖记录。</p>
+          <p>会移除当前使用人的血糖、血压和饮食记录。</p>
           <div class="split-actions">
             <button class="secondary-action" type="button" @click="showResetConfirm = false">取消</button>
             <button class="secondary-action danger solid-danger" type="button" @click="resetRecords">清空</button>
@@ -604,6 +827,7 @@ import { computed, defineComponent, h, nextTick, onBeforeUnmount, onMounted, ref
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
 import {
+  Activity,
   BarChart3,
   Check,
   CheckCircle2,
@@ -627,20 +851,28 @@ import {
   CHART_REFERENCE_LIMIT_STORAGE_KEY,
   DEFAULT_CHART_REFERENCE_LIMIT,
   PERIODS,
-  formatGlucoseLimit,
   formatDateTime,
+  formatGlucoseLimit,
+  formatGlucoseValue,
+  getBloodPressureStats,
+  getLatestBloodPressureRecord,
   getLatestRecord,
   getRecordStats,
   normalizeChartReferenceLimit,
+  normalizeGlucoseValue,
+  sortBloodPressureRecordsByTime,
   sortRecordsByTime,
   toLocalInputValue
 } from './lib/records.js';
 import {
   clearAuthSession,
+  clearBloodPressureRecordsOnServer,
   clearFoodRecordsOnServer,
   clearRecordsOnServer,
+  createBloodPressureRecordOnServer,
   createFoodRecordOnServer,
   createRecordOnServer,
+  deleteBloodPressureRecordOnServer,
   deleteFoodRecordOnServer,
   deleteRecordOnServer,
   fetchFoodImageBlob,
@@ -648,10 +880,12 @@ import {
   getCurrentUser,
   getStoredAuthSession,
   loginAccount,
+  listBloodPressureRecords,
   listFoodRecords,
   listRecords,
   registerAccount,
   setAuthSession,
+  updateBloodPressureRecordOnServer,
   updateCurrentUserProfile,
   updateFoodRecordOnServer,
   updateRecordOnServer
@@ -669,16 +903,24 @@ const periods = PERIODS;
 const foodMealTypes = ['早餐', '午餐', '晚餐', '加餐', '其他'];
 const activeTab = ref('home');
 const activeRecordKind = ref('glucose');
+const activeChartKind = ref('glucose');
+const activeReportKind = ref('glucose');
 const records = ref([]);
+const bloodPressureRecords = ref([]);
 const foodRecords = ref([]);
 const foodImageUrls = ref({});
+const showAuthModal = ref(false);
 const showForm = ref(false);
+const showBloodPressureForm = ref(false);
 const showFoodForm = ref(false);
 const editingRecord = ref(null);
+const editingBloodPressureRecord = ref(null);
 const editingFoodRecord = ref(null);
 const detailRecord = ref(null);
+const detailBloodPressureRecord = ref(null);
 const detailFoodRecord = ref(null);
 const confirmDelete = ref(null);
+const confirmBloodPressureDelete = ref(null);
 const confirmFoodDelete = ref(null);
 const showResetConfirm = ref(false);
 const toast = ref('');
@@ -690,6 +932,7 @@ const isLoadingCaptcha = ref(false);
 const isExporting = ref(false);
 const isLoadingRecords = ref(false);
 const isSavingRecord = ref(false);
+const isSavingBloodPressureRecord = ref(false);
 const isSavingFoodRecord = ref(false);
 const isEditingProfile = ref(false);
 const isSavingProfile = ref(false);
@@ -715,6 +958,13 @@ const form = ref({
   measuredAt: toLocalInputValue(),
   note: ''
 });
+const bloodPressureForm = ref({
+  systolic: '',
+  diastolic: '',
+  pulse: '',
+  measuredAt: toLocalInputValue(),
+  note: ''
+});
 const foodForm = ref({
   mealType: '早餐',
   eatenAt: toLocalInputValue(),
@@ -725,11 +975,37 @@ const foodForm = ref({
 });
 
 const sortedRecords = computed(() => sortRecordsByTime(records.value));
+const sortedBloodPressureRecords = computed(() => sortBloodPressureRecordsByTime(bloodPressureRecords.value));
 const sortedFoodRecords = computed(() => [...foodRecords.value].sort((left, right) => new Date(right.eatenAt) - new Date(left.eatenAt)));
 const latestRecord = computed(() => getLatestRecord(records.value));
+const latestBloodPressureRecord = computed(() => getLatestBloodPressureRecord(bloodPressureRecords.value));
 const stats = computed(() => getRecordStats(records.value));
+const bloodPressureStats = computed(() => getBloodPressureStats(bloodPressureRecords.value));
 const currentUser = computed(() => currentAuth.value?.user || null);
+const formattedStats = computed(() => ({
+  average: stats.value.count ? formatGlucoseValue(stats.value.average) : '--',
+  highest: stats.value.count ? formatGlucoseValue(stats.value.highest) : '--',
+  lowest: stats.value.count ? formatGlucoseValue(stats.value.lowest) : '--'
+}));
 const formattedChartReferenceLimit = computed(() => formatGlucoseLimit(chartReferenceLimit.value));
+const recordPageTitle = computed(() => {
+  if (activeRecordKind.value === 'pressure') return `${bloodPressureRecords.value.length} 条血压记录`;
+  if (activeRecordKind.value === 'food') return `${foodRecords.value.length} 条饮食记录`;
+  return `${records.value.length} 条血糖记录`;
+});
+const emptyRecordTitle = computed(() => {
+  if (activeRecordKind.value === 'pressure') return '还没有血压记录';
+  if (activeRecordKind.value === 'food') return '还没有饮食记录';
+  return '还没有血糖记录';
+});
+const emptyRecordBody = computed(() => {
+  if (activeRecordKind.value === 'pressure') return '点一下新增按钮，记录最近一次血压。';
+  if (activeRecordKind.value === 'food') return '拍一张饭菜，顺手记下吃了什么。';
+  return '点一下新增按钮，先记录最近一次测量。';
+});
+const canExportActiveReport = computed(() => (
+  activeReportKind.value === 'pressure' ? bloodPressureRecords.value.length > 0 : records.value.length > 0
+));
 const avatarInitial = computed(() => {
   const source = currentUser.value?.displayName || currentUser.value?.username || '糖';
   return source.trim().slice(0, 1).toUpperCase();
@@ -747,6 +1023,14 @@ const chartInsight = computed(() => {
   if (stats.value.count < 3) return '记录还比较少，再补几条后曲线会更有参考感。';
   return '最近记录整体比较平稳，继续按需要偶尔记录就好。';
 });
+const pressureChartInsight = computed(() => {
+  if (!bloodPressureRecords.value.length) return '还没有可分析的数据，先记录一次血压。';
+  if (bloodPressureStats.value.count < 3) return '血压记录还比较少，多补几条后趋势会更清楚。';
+  return '血压趋势已按收缩压和舒张压分开展示，方便复盘日常变化。';
+});
+const activeChartInsight = computed(() => (
+  activeChartKind.value === 'pressure' ? pressureChartInsight.value : chartInsight.value
+));
 
 const GlucoseChart = defineComponent({
   name: 'GlucoseChart',
@@ -772,13 +1056,13 @@ const GlucoseChart = defineComponent({
         ]);
       }
 
-      const values = ordered.map((record) => record.value);
+      const values = ordered.map((record) => Number(record.value));
       const min = Math.min(4, referenceLimit, ...values) - 0.4;
       const max = Math.max(9, referenceLimit, ...values) + 0.4;
       const xStep = ordered.length === 1 ? 0 : (width - padding * 2) / (ordered.length - 1);
       const pointFor = (record, index) => {
         const x = ordered.length === 1 ? width / 2 : padding + index * xStep;
-        const y = height - padding - ((record.value - min) / (max - min)) * (height - padding * 2);
+        const y = height - padding - ((Number(record.value) - min) / (max - min)) * (height - padding * 2);
         return { x, y, record };
       };
       const points = ordered.map(pointFor);
@@ -818,9 +1102,9 @@ const GlucoseChart = defineComponent({
               class: 'chart-hit-area',
               tabindex: 0,
               role: 'button',
-              'aria-label': `${formatDateTime(point.record.measuredAt)} 血糖 ${point.record.value} ${point.record.unit}`
+              'aria-label': `${formatDateTime(point.record.measuredAt)} 血糖 ${formatGlucoseValue(point.record.value)} ${point.record.unit}`
             }),
-            !props.compact && h('text', { x: point.x, y: point.y - 10, class: 'chart-label', 'text-anchor': 'middle' }, point.record.value)
+            !props.compact && h('text', { x: point.x, y: point.y - 10, class: 'chart-label', 'text-anchor': 'middle' }, formatGlucoseValue(point.record.value))
           ])),
         ]),
         tooltipPoint && h('div', {
@@ -830,13 +1114,112 @@ const GlucoseChart = defineComponent({
             top: `${(tooltipPoint.y / height) * 100}%`
           }
         }, [
-          h('span', `血糖 ${tooltipPoint.record.value} ${tooltipPoint.record.unit}`),
+          h('span', `血糖 ${formatGlucoseValue(tooltipPoint.record.value)} ${tooltipPoint.record.unit}`),
           h('strong', tooltipPoint.record.period),
           h('small', `记录时间：${formatDateTime(tooltipPoint.record.measuredAt)}`)
         ]),
         h('div', { class: 'chart-axis' }, [
           h('span', ordered[0] ? shortDate(ordered[0].measuredAt) : ''),
           h('span', `参考上限 ${formatGlucoseLimit(referenceLimit)}`),
+          h('span', ordered.at(-1) ? shortDate(ordered.at(-1).measuredAt) : '')
+        ])
+      ]);
+    };
+  }
+});
+
+const BloodPressureChart = defineComponent({
+  name: 'BloodPressureChart',
+  props: {
+    records: { type: Array, required: true },
+    compact: { type: Boolean, default: false }
+  },
+  setup(props) {
+    const activePoint = ref(null);
+
+    return () => {
+      const width = props.compact ? 320 : 340;
+      const height = props.compact ? 128 : 186;
+      const padding = props.compact ? 18 : 24;
+      const ordered = sortBloodPressureRecordsByTime(props.records).reverse().slice(-10);
+
+      if (!ordered.length) {
+        return h('div', { class: ['chart-empty', props.compact && 'compact'] }, [
+          h(Activity, { size: 28 }),
+          h('span', '记录后这里会出现血压曲线')
+        ]);
+      }
+
+      const values = ordered.flatMap((record) => [record.systolic, record.diastolic]);
+      const min = Math.min(60, ...values) - 8;
+      const max = Math.max(150, ...values) + 8;
+      const xStep = ordered.length === 1 ? 0 : (width - padding * 2) / (ordered.length - 1);
+      const pointFor = (record, index, key) => {
+        const x = ordered.length === 1 ? width / 2 : padding + index * xStep;
+        const y = height - padding - ((record[key] - min) / (max - min)) * (height - padding * 2);
+        return { x, y, record };
+      };
+      const systolicPoints = ordered.map((record, index) => pointFor(record, index, 'systolic'));
+      const diastolicPoints = ordered.map((record, index) => pointFor(record, index, 'diastolic'));
+      const pathFor = (points) => {
+        if (points.length === 1) {
+          return `M ${points[0].x - 12} ${points[0].y} L ${points[0].x + 12} ${points[0].y + 1}`;
+        }
+        return points.map((point, index) => `${index === 0 ? 'M' : 'L'} ${point.x} ${point.y}`).join(' ');
+      };
+      const tooltipPoint = activePoint.value;
+      const tooltipSide = tooltipPoint?.x < width * 0.22
+        ? 'align-left'
+        : tooltipPoint?.x > width * 0.78
+          ? 'align-right'
+          : 'align-center';
+
+      return h('div', { class: ['chart-wrap', 'pressure-chart-wrap', props.compact && 'compact'] }, [
+        h('svg', { viewBox: `0 0 ${width} ${height}`, role: 'img', 'aria-label': '血压趋势曲线' }, [
+          h('path', { d: pathFor(systolicPoints), class: 'chart-line pressure-systolic-line' }),
+          h('path', { d: pathFor(diastolicPoints), class: 'chart-line pressure-diastolic-line' }),
+          systolicPoints.map((point, index) => h('g', {
+            key: `${point.record.id}-pressure`,
+            class: ['chart-point', tooltipPoint?.record.id === point.record.id && 'active'],
+            onMouseenter: () => { activePoint.value = point; },
+            onMouseleave: () => { activePoint.value = null; },
+            onFocusin: () => { activePoint.value = point; },
+            onFocusout: () => { activePoint.value = null; },
+            onClick: () => { activePoint.value = point; }
+          }, [
+            h('circle', { cx: point.x, cy: point.y, r: props.compact ? 4 : 5, class: 'chart-dot pressure-systolic-dot' }),
+            h('circle', {
+              cx: point.x,
+              cy: point.y,
+              r: props.compact ? 15 : 18,
+              class: 'chart-hit-area',
+              tabindex: 0,
+              role: 'button',
+              'aria-label': `${formatDateTime(point.record.measuredAt)} 血压 ${point.record.systolic}/${point.record.diastolic} mmHg`
+            }),
+            h('circle', {
+              cx: diastolicPoints[index].x,
+              cy: diastolicPoints[index].y,
+              r: props.compact ? 3 : 4,
+              class: 'chart-dot pressure-diastolic-dot'
+            }),
+            !props.compact && h('text', { x: point.x, y: point.y - 10, class: 'chart-label', 'text-anchor': 'middle' }, `${point.record.systolic}/${point.record.diastolic}`)
+          ]))
+        ]),
+        tooltipPoint && h('div', {
+          class: ['chart-tooltip', tooltipSide],
+          style: {
+            left: `${(tooltipPoint.x / width) * 100}%`,
+            top: `${(tooltipPoint.y / height) * 100}%`
+          }
+        }, [
+          h('span', `血压 ${tooltipPoint.record.systolic}/${tooltipPoint.record.diastolic} mmHg`),
+          h('strong', pressurePulseText(tooltipPoint.record)),
+          h('small', `记录时间：${formatDateTime(tooltipPoint.record.measuredAt)}`)
+        ]),
+        h('div', { class: 'chart-axis' }, [
+          h('span', ordered[0] ? shortDate(ordered[0].measuredAt) : ''),
+          h('span', '收缩压 / 舒张压'),
           h('span', ordered.at(-1) ? shortDate(ordered.at(-1).measuredAt) : '')
         ])
       ]);
@@ -887,6 +1270,7 @@ async function restoreAuth() {
     clearAuthSession();
     currentAuth.value = null;
     records.value = [];
+    bloodPressureRecords.value = [];
     foodRecords.value = [];
     revokeFoodImageUrls();
   } finally {
@@ -901,6 +1285,20 @@ function switchAuthMode(mode) {
   authMode.value = mode;
   authError.value = '';
   authForm.value.captchaAnswer = '';
+}
+
+function openAuthModal(mode = 'login') {
+  switchAuthMode(mode);
+  showAuthModal.value = true;
+  if (!captchaChallenge.value) {
+    refreshCaptcha();
+  }
+}
+
+function closeAuthModal() {
+  if (isAuthenticating.value) return;
+  showAuthModal.value = false;
+  authError.value = '';
 }
 
 async function refreshCaptcha() {
@@ -949,6 +1347,9 @@ async function submitAuth() {
 
     currentAuth.value = auth;
     setAuthSession(auth);
+    if (!showForm.value && !showBloodPressureForm.value && !showFoodForm.value) {
+      activeTab.value = 'home';
+    }
     authForm.value = {
       username: '',
       displayName: '',
@@ -957,7 +1358,7 @@ async function submitAuth() {
       captchaAnswer: ''
     };
     captchaChallenge.value = null;
-    activeTab.value = 'home';
+    showAuthModal.value = false;
     await loadRecords(false);
     showToast(authMode.value === 'register' ? '注册成功' : '登录成功');
   } catch (error) {
@@ -981,15 +1382,20 @@ function logout() {
   clearAuthSession();
   currentAuth.value = null;
   records.value = [];
+  bloodPressureRecords.value = [];
   foodRecords.value = [];
   revokeFoodImageUrls();
   revokeFoodPreviewUrl();
   activeTab.value = 'home';
+  showAuthModal.value = false;
   showForm.value = false;
+  showBloodPressureForm.value = false;
   showFoodForm.value = false;
   detailRecord.value = null;
+  detailBloodPressureRecord.value = null;
   detailFoodRecord.value = null;
   confirmDelete.value = null;
+  confirmBloodPressureDelete.value = null;
   confirmFoodDelete.value = null;
   showToast('已退出登录');
   refreshCaptcha();
@@ -1056,15 +1462,18 @@ async function loadRecords(showError = true) {
 
   isLoadingRecords.value = true;
   try {
-    const [nextRecords, nextFoodRecords] = await Promise.all([
+    const [nextRecords, nextBloodPressureRecords, nextFoodRecords] = await Promise.all([
       listRecords(),
+      listBloodPressureRecords(),
       listFoodRecords()
     ]);
     records.value = nextRecords;
+    bloodPressureRecords.value = nextBloodPressureRecords;
     foodRecords.value = nextFoodRecords;
     await refreshFoodImageUrls(nextFoodRecords);
   } catch (error) {
     records.value = [];
+    bloodPressureRecords.value = [];
     foodRecords.value = [];
     revokeFoodImageUrls();
     if (error.status === 401) {
@@ -1095,6 +1504,23 @@ function closeForm() {
   editingRecord.value = null;
 }
 
+function openNewBloodPressureRecord() {
+  editingBloodPressureRecord.value = null;
+  bloodPressureForm.value = {
+    systolic: '',
+    diastolic: '',
+    pulse: '',
+    measuredAt: toLocalInputValue(),
+    note: ''
+  };
+  showBloodPressureForm.value = true;
+}
+
+function closeBloodPressureForm() {
+  showBloodPressureForm.value = false;
+  editingBloodPressureRecord.value = null;
+}
+
 function openNewFoodRecord() {
   editingFoodRecord.value = null;
   revokeFoodPreviewUrl();
@@ -1113,6 +1539,32 @@ function closeFoodForm() {
   showFoodForm.value = false;
   editingFoodRecord.value = null;
   revokeFoodPreviewUrl();
+}
+
+function openActiveRecordForm() {
+  if (activeRecordKind.value === 'pressure') {
+    openNewBloodPressureRecord();
+  } else if (activeRecordKind.value === 'food') {
+    openNewFoodRecord();
+  } else {
+    openNewRecord();
+  }
+}
+
+function openActiveChartRecord() {
+  if (activeChartKind.value === 'pressure') {
+    openNewBloodPressureRecord();
+  } else {
+    openNewRecord();
+  }
+}
+
+function openActiveReportRecord() {
+  if (activeReportKind.value === 'pressure') {
+    openNewBloodPressureRecord();
+  } else {
+    openNewRecord();
+  }
 }
 
 function handleFoodImageChange(event) {
@@ -1157,12 +1609,17 @@ function buildFoodFormData() {
 
 async function saveRecord() {
   if (isSavingRecord.value) return;
+  if (!currentUser.value) {
+    showToast('登录后再保存记录');
+    openAuthModal('login');
+    return;
+  }
 
   isSavingRecord.value = true;
   const wasEditing = Boolean(editingRecord.value);
 
   const payload = {
-    value: Number(form.value.value),
+    value: normalizeGlucoseValue(form.value.value),
     period: form.value.period,
     measuredAt: form.value.measuredAt,
     note: form.value.note
@@ -1184,10 +1641,51 @@ async function saveRecord() {
   }
 }
 
+async function saveBloodPressureRecord() {
+  if (isSavingBloodPressureRecord.value) return;
+  if (!currentUser.value) {
+    showToast('登录后再保存血压');
+    openAuthModal('login');
+    return;
+  }
+
+  isSavingBloodPressureRecord.value = true;
+  const wasEditing = Boolean(editingBloodPressureRecord.value);
+  const payload = {
+    systolic: Number(bloodPressureForm.value.systolic),
+    diastolic: Number(bloodPressureForm.value.diastolic),
+    pulse: bloodPressureForm.value.pulse === '' ? null : Number(bloodPressureForm.value.pulse),
+    measuredAt: bloodPressureForm.value.measuredAt,
+    note: bloodPressureForm.value.note
+  };
+
+  try {
+    if (wasEditing) {
+      await updateBloodPressureRecordOnServer(editingBloodPressureRecord.value.id, payload);
+    } else {
+      await createBloodPressureRecordOnServer(payload);
+    }
+    await loadRecords(false);
+    closeBloodPressureForm();
+    activeTab.value = 'records';
+    activeRecordKind.value = 'pressure';
+    showToast(wasEditing ? '血压已更新' : '血压已保存');
+  } catch {
+    showToast('血压保存失败');
+  } finally {
+    isSavingBloodPressureRecord.value = false;
+  }
+}
+
 async function saveFoodRecord() {
   if (isSavingFoodRecord.value) return;
   if (!foodForm.value.content.trim()) {
     showToast('先写一下吃了什么');
+    return;
+  }
+  if (!currentUser.value) {
+    showToast('登录后再保存饮食');
+    openAuthModal('login');
     return;
   }
 
@@ -1224,6 +1722,19 @@ function startEdit(record) {
   showForm.value = true;
 }
 
+function startEditBloodPressure(record) {
+  detailBloodPressureRecord.value = null;
+  editingBloodPressureRecord.value = record;
+  bloodPressureForm.value = {
+    systolic: record.systolic,
+    diastolic: record.diastolic,
+    pulse: record.pulse ?? '',
+    measuredAt: record.measuredAt,
+    note: record.note
+  };
+  showBloodPressureForm.value = true;
+}
+
 function startEditFood(record) {
   detailFoodRecord.value = null;
   editingFoodRecord.value = record;
@@ -1251,6 +1762,18 @@ async function removeRecord(id) {
   }
 }
 
+async function removeBloodPressureRecord(id) {
+  try {
+    await deleteBloodPressureRecordOnServer(id);
+    await loadRecords(false);
+    confirmBloodPressureDelete.value = null;
+    detailBloodPressureRecord.value = null;
+    showToast('血压已删除');
+  } catch {
+    showToast('删除失败，请检查 API 服务');
+  }
+}
+
 async function removeFoodRecord(id) {
   try {
     await deleteFoodRecordOnServer(id);
@@ -1267,9 +1790,11 @@ async function resetRecords() {
   try {
     await Promise.all([
       clearRecordsOnServer(),
+      clearBloodPressureRecordsOnServer(),
       clearFoodRecordsOnServer()
     ]);
     records.value = [];
+    bloodPressureRecords.value = [];
     foodRecords.value = [];
     revokeFoodImageUrls();
     showResetConfirm.value = false;
@@ -1301,6 +1826,51 @@ async function refreshFoodImageUrls(nextFoodRecords) {
   foodImageUrls.value = Object.fromEntries(imageEntries.filter(([, url]) => url));
 }
 
+function getCanvasPngBlob(canvas) {
+  return new Promise((resolve, reject) => {
+    canvas.toBlob((blob) => {
+      if (blob) {
+        resolve(blob);
+        return;
+      }
+      reject(new Error('PNG_EXPORT_FAILED'));
+    }, 'image/png');
+  });
+}
+
+function downloadPngBlob(blob, fileName) {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.download = fileName;
+  link.href = url;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
+async function shareOrDownloadPng(canvas, fileName, title) {
+  const blob = await getCanvasPngBlob(canvas);
+  const file = new File([blob], fileName, { type: 'image/png' });
+  const shareData = {
+    title,
+    files: [file]
+  };
+
+  if (typeof navigator.share === 'function' && typeof navigator.canShare === 'function' && navigator.canShare(shareData)) {
+    showToast('请在系统面板中选择保存图片');
+    try {
+      await navigator.share(shareData);
+      return;
+    } catch (error) {
+      if (error?.name === 'AbortError') return;
+    }
+  }
+
+  downloadPngBlob(blob, fileName);
+  showToast('图片已下载，可从浏览器下载中保存');
+}
+
 async function exportReport(type) {
   if (!reportRef.value) return;
 
@@ -1308,6 +1878,7 @@ async function exportReport(type) {
   await nextTick();
 
   try {
+    const reportName = activeReportKind.value === 'pressure' ? '血压记录' : '血糖记录';
     const canvas = await html2canvas(reportRef.value, {
       backgroundColor: '#fff7fb',
       scale: 2,
@@ -1315,11 +1886,7 @@ async function exportReport(type) {
     });
 
     if (type === 'png') {
-      const link = document.createElement('a');
-      link.download = `血糖记录-${Date.now()}.png`;
-      link.href = canvas.toDataURL('image/png');
-      link.click();
-      showToast('图片已生成');
+      await shareOrDownloadPng(canvas, `${reportName}-${Date.now()}.png`, reportName);
       return;
     }
 
@@ -1346,7 +1913,7 @@ async function exportReport(type) {
       renderedHeight += pageContentHeight;
     }
 
-    pdf.save(`血糖记录-${Date.now()}.pdf`);
+    pdf.save(`${reportName}-${Date.now()}.pdf`);
     showToast('PDF 已生成');
   } finally {
     isExporting.value = false;
@@ -1364,6 +1931,10 @@ function showToast(message) {
 function shortDate(value) {
   const date = new Date(value);
   return `${date.getMonth() + 1}/${date.getDate()}`;
+}
+
+function pressurePulseText(record) {
+  return record?.pulse ? `心率 ${record.pulse} bpm` : '未记录心率';
 }
 
 function dayLabel(value) {

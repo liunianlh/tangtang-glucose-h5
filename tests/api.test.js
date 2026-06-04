@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createApp } from '../server/app.js';
 import { createFoodImageStorage } from '../server/lib/foodImageStorage.js';
+import { createMemoryBloodPressureRecordRepository } from '../server/repositories/memoryBloodPressureRecordRepository.js';
 import { createMemoryFoodRecordRepository } from '../server/repositories/memoryFoodRecordRepository.js';
 import { createMemoryRecordRepository } from '../server/repositories/memoryRecordRepository.js';
 import { createMemoryUserRepository } from '../server/repositories/memoryUserRepository.js';
@@ -12,11 +13,13 @@ import { createMemoryUserRepository } from '../server/repositories/memoryUserRep
 function makeTestApp(seed = []) {
   const recordRepository = createMemoryRecordRepository(seed);
   const userRepository = createMemoryUserRepository();
+  const bloodPressureRecordRepository = createMemoryBloodPressureRecordRepository();
   const foodRecordRepository = createMemoryFoodRecordRepository();
   const foodImageStorage = createFoodImageStorage(mkdtempSync(join(tmpdir(), 'glucose-food-images-')));
   return createApp({
     recordRepository,
     userRepository,
+    bloodPressureRecordRepository,
     foodRecordRepository,
     foodImageStorage,
     authSecret: 'test-auth-secret'
@@ -204,7 +207,7 @@ describe('records API', () => {
       .post('/api/records')
       .set(authHeader(token))
       .send({
-        value: 6.3,
+        value: 6.34,
         period: '早餐后',
         measuredAt: '2026-05-25T09:35',
         note: '早餐后散步'
@@ -230,7 +233,7 @@ describe('records API', () => {
       .put(`/api/records/${created.body.id}`)
       .set(authHeader(token))
       .send({
-        value: 6.8,
+        value: 6.86,
         period: '睡前',
         measuredAt: '2026-05-25T22:10',
         note: '睡前复测'
@@ -239,7 +242,7 @@ describe('records API', () => {
     expect(updated.status).toBe(200);
     expect(updated.body).toMatchObject({
       id: created.body.id,
-      value: 6.8,
+      value: 6.9,
       period: '睡前',
       note: '睡前复测'
     });
@@ -309,6 +312,144 @@ describe('records API', () => {
 
     expect(response.status).toBe(400);
     expect(response.body.error).toBe('INVALID_RECORD');
+  });
+});
+
+describe('blood pressure records API', () => {
+  it('requires authentication for blood pressure data', async () => {
+    const app = makeTestApp();
+
+    const response = await request(app).get('/api/blood-pressure-records');
+
+    expect(response.status).toBe(401);
+    expect(response.body.error).toBe('UNAUTHORIZED');
+  });
+
+  it('creates, lists, updates, and deletes pressure records with optional pulse', async () => {
+    const app = makeTestApp();
+    const { token } = await registerUser(app, 'wife', '我的老婆');
+
+    const created = await request(app)
+      .post('/api/blood-pressure-records')
+      .set(authHeader(token))
+      .send({
+        systolic: 118,
+        diastolic: 76,
+        measuredAt: '2026-05-25T09:35',
+        note: '早餐后测量'
+      });
+
+    expect(created.status).toBe(201);
+    expect(created.body).toMatchObject({
+      systolic: 118,
+      diastolic: 76,
+      pulse: null,
+      measuredAt: '2026-05-25T09:35',
+      note: '早餐后测量'
+    });
+
+    const listed = await request(app)
+      .get('/api/blood-pressure-records')
+      .set(authHeader(token));
+    expect(listed.status).toBe(200);
+    expect(listed.body.records).toHaveLength(1);
+    expect(listed.body.records[0].id).toBe(created.body.id);
+
+    const updated = await request(app)
+      .put(`/api/blood-pressure-records/${created.body.id}`)
+      .set(authHeader(token))
+      .send({
+        systolic: 121,
+        diastolic: 79,
+        pulse: 72,
+        measuredAt: '2026-05-25T22:10',
+        note: '睡前复测'
+      });
+
+    expect(updated.status).toBe(200);
+    expect(updated.body).toMatchObject({
+      id: created.body.id,
+      systolic: 121,
+      diastolic: 79,
+      pulse: 72,
+      note: '睡前复测'
+    });
+
+    const deleted = await request(app)
+      .delete(`/api/blood-pressure-records/${created.body.id}`)
+      .set(authHeader(token));
+    expect(deleted.status).toBe(204);
+
+    const afterDelete = await request(app)
+      .get('/api/blood-pressure-records')
+      .set(authHeader(token));
+    expect(afterDelete.body.records).toEqual([]);
+  });
+
+  it('keeps pressure records isolated between users', async () => {
+    const app = makeTestApp();
+    const wife = await registerUser(app, 'wife', '我的老婆');
+    const husband = await registerUser(app, 'husband', '我');
+
+    const created = await request(app)
+      .post('/api/blood-pressure-records')
+      .set(authHeader(wife.token))
+      .send({
+        systolic: 125,
+        diastolic: 82,
+        pulse: 74,
+        measuredAt: '2026-05-25T07:20',
+        note: '老婆的血压'
+      });
+
+    expect(created.status).toBe(201);
+
+    const husbandRecords = await request(app)
+      .get('/api/blood-pressure-records')
+      .set(authHeader(husband.token));
+    expect(husbandRecords.body.records).toEqual([]);
+
+    const husbandUpdate = await request(app)
+      .put(`/api/blood-pressure-records/${created.body.id}`)
+      .set(authHeader(husband.token))
+      .send({
+        systolic: 120,
+        diastolic: 78,
+        measuredAt: '2026-05-26T08:10',
+        note: '不能改别人的'
+      });
+    expect(husbandUpdate.status).toBe(404);
+    expect(husbandUpdate.body.error).toBe('BLOOD_PRESSURE_RECORD_NOT_FOUND');
+  });
+
+  it('rejects invalid blood pressure payloads', async () => {
+    const app = makeTestApp();
+    const { token } = await registerUser(app, 'wife', '我的老婆');
+
+    const invalidPressure = await request(app)
+      .post('/api/blood-pressure-records')
+      .set(authHeader(token))
+      .send({
+        systolic: 300,
+        diastolic: 10,
+        measuredAt: 'not-a-date',
+        note: ''
+      });
+    expect(invalidPressure.status).toBe(400);
+    expect(invalidPressure.body.error).toBe('INVALID_BLOOD_PRESSURE_RECORD');
+
+    const invalidPulse = await request(app)
+      .post('/api/blood-pressure-records')
+      .set(authHeader(token))
+      .send({
+        systolic: 120,
+        diastolic: 80,
+        pulse: 300,
+        measuredAt: '2026-05-26T08:15',
+        note: ''
+      });
+    expect(invalidPulse.status).toBe(400);
+    expect(invalidPulse.body.error).toBe('INVALID_BLOOD_PRESSURE_RECORD');
   });
 });
 

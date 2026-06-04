@@ -1,64 +1,78 @@
-# Blood Pressure Records Design
+# 血压记录功能设计文档
 
-## Context
+## 背景
 
-The app currently records blood glucose and food entries for authenticated users. Blood glucose uses JSON CRUD endpoints, local utility helpers, trend charts, and PNG/PDF report export. Food records use a separate resource with multipart image upload.
+当前应用已经支持登录用户记录血糖和饮食。
 
-This feature adds blood pressure records as a first-class health record type while keeping the existing blood glucose and food flows intact.
+现有血糖功能包含：
 
-## Goals
+- JSON 格式的增删改查接口
+- 前端记录工具函数
+- 首页摘要
+- 趋势曲线
+- 图片和 PDF 导出报告
 
-- Let logged-in users create, edit, delete, and view blood pressure records.
-- Store blood pressure data on the server with the same per-user isolation as existing records.
-- Show the latest blood pressure reading on the home page.
-- Add a blood pressure trend chart.
-- Add a blood pressure export report with image and PDF export.
-- Keep guest behavior consistent with current glucose and food flows: users may open the form, but saving requires login.
+现有饮食功能包含：
 
-## Non-Goals
+- 独立饮食记录资源
+- 图片上传和图片读取
+- 前端列表、详情、编辑、删除
 
-- No medical diagnosis or blood pressure grading advice.
-- No medication, symptoms, posture, arm side, or measurement location fields.
-- No combined "all health records" timeline.
-- No rewrite of the existing glucose record model into a generic health record model.
-- No pulse-only chart line in this iteration.
+这次新增血压记录功能，需要把血压作为独立的一类健康记录接入，同时不重构现有血糖和饮食功能。
 
-## Data Model
+## 目标
 
-Add a Prisma model named `BloodPressureRecord`.
+- 登录用户可以新增、编辑、删除、查看血压记录。
+- 血压数据保存在后端，并和现有记录一样按用户隔离。
+- 首页展示最近一次血压。
+- 曲线页支持查看血压趋势。
+- 导出页支持血压报告，并可导出图片和 PDF。
+- 未登录体验和当前血糖、饮食一致：可以先打开表单，保存时要求登录。
 
-Fields:
+## 不做的内容
 
-- `id`: string primary key
-- `userId`: owning user id
-- `systolic`: integer, mmHg
-- `diastolic`: integer, mmHg
-- `pulse`: integer, bpm
-- `measuredAt`: datetime
-- `note`: string, max 500 characters
-- `createdAt`: datetime
-- `updatedAt`: datetime
+- 不做医学诊断或血压分级建议。
+- 不增加用药、症状、测量姿势、左手右手、测量地点等字段。
+- 不做“所有健康记录”的混合时间线。
+- 不把现有血糖表重构成通用健康记录表。
+- 心率本次只作为血压记录的一部分展示，不单独画第三条趋势线。
 
-Relations and indexes:
+## 数据模型
 
-- Belongs to `User`
-- Cascade delete with user
-- Index on `[userId, measuredAt]`
-- Database table name: `blood_pressure_records`
+新增 Prisma 模型：`BloodPressureRecord`。
 
-Validation:
+字段：
 
-- `systolic`: 50 to 260
-- `diastolic`: 30 to 180
-- `pulse`: 30 to 220
-- `measuredAt`: valid datetime string
-- `note`: optional, trimmed, max 500 characters
+- `id`：主键
+- `userId`：所属用户
+- `systolic`：收缩压，单位 `mmHg`
+- `diastolic`：舒张压，单位 `mmHg`
+- `pulse`：心率，单位 `bpm`
+- `measuredAt`：测量时间
+- `note`：备注，最多 500 字
+- `createdAt`：创建时间
+- `updatedAt`：更新时间
 
-## Backend Design
+关系和索引：
 
-Add an independent blood pressure repository, matching existing glucose repository patterns.
+- 归属于 `User`
+- 用户删除时级联删除血压记录
+- 增加 `[userId, measuredAt]` 索引
+- 数据库表名使用 `blood_pressure_records`
 
-Repository methods:
+字段校验：
+
+- 收缩压：`50-260`
+- 舒张压：`30-180`
+- 心率：`30-220`
+- 测量时间：必须是合法日期时间
+- 备注：可选，去掉首尾空格，最多 500 字
+
+## 后端设计
+
+新增独立血压记录仓库，结构跟现有血糖仓库保持一致。
+
+仓库方法：
 
 - `listBloodPressureRecords(userId)`
 - `createBloodPressureRecord(userId, input)`
@@ -66,12 +80,12 @@ Repository methods:
 - `deleteBloodPressureRecord(userId, id)`
 - `clearBloodPressureRecords(userId)`
 
-Implement both:
+新增两个实现：
 
 - `server/repositories/memoryBloodPressureRecordRepository.js`
 - `server/repositories/prismaBloodPressureRecordRepository.js`
 
-Add routes:
+新增接口：
 
 - `GET /api/blood-pressure-records`
 - `POST /api/blood-pressure-records`
@@ -79,17 +93,17 @@ Add routes:
 - `DELETE /api/blood-pressure-records/:id`
 - `DELETE /api/blood-pressure-records`
 
-Errors:
+错误约定：
 
-- Invalid payload returns `400` with `INVALID_BLOOD_PRESSURE_RECORD`
-- Missing auth returns existing `401 UNAUTHORIZED`
-- Updating or deleting another user's record returns `404 BLOOD_PRESSURE_RECORD_NOT_FOUND`
+- 参数不合法：返回 `400 INVALID_BLOOD_PRESSURE_RECORD`
+- 未登录：沿用现有 `401 UNAUTHORIZED`
+- 编辑或删除别人的记录：返回 `404 BLOOD_PRESSURE_RECORD_NOT_FOUND`
 
-`DELETE /api/records` continues to clear only glucose records. The existing profile "清空全部记录" action should call glucose, blood pressure, and food clear endpoints because its UI meaning is account-wide cleanup.
+`DELETE /api/records` 仍然只清空血糖记录。个人中心里的“清空全部记录”按钮语义是清空当前用户的全部数据，所以前端需要同时调用清空血糖、血压、饮食三个接口。
 
-## Frontend Design
+## 前端设计
 
-Add blood pressure API helpers to `src/lib/api.js`:
+在 `src/lib/api.js` 增加血压接口方法：
 
 - `listBloodPressureRecords`
 - `createBloodPressureRecordOnServer`
@@ -97,7 +111,7 @@ Add blood pressure API helpers to `src/lib/api.js`:
 - `deleteBloodPressureRecordOnServer`
 - `clearBloodPressureRecordsOnServer`
 
-Add blood pressure utility helpers to `src/lib/records.js`:
+在 `src/lib/records.js` 增加血压记录工具函数：
 
 - `createBloodPressureRecord`
 - `sortBloodPressureRecordsByTime`
@@ -106,123 +120,164 @@ Add blood pressure utility helpers to `src/lib/records.js`:
 - `applyBloodPressureRecordMutation`
 - `deleteBloodPressureRecord`
 
-Stats should include:
+血压统计包含：
 
-- `count`
-- average systolic
-- average diastolic
-- highest systolic
-- lowest diastolic
-- average pulse
+- 记录数
+- 平均收缩压
+- 平均舒张压
+- 最高收缩压
+- 最低舒张压
+- 平均心率
 
-### Home
+## 首页
 
-Add a "最近血压" summary area near the existing health summary content.
+首页增加“最近血压”摘要区。
 
-Display:
+展示内容：
 
-- latest reading as `120/80`
-- unit `mmHg`
-- pulse as `心率 72 bpm`
-- measured time and note if present
+- 最近一次读数，例如 `120/80`
+- 单位 `mmHg`
+- 心率，例如 `心率 72 bpm`
+- 测量时间
+- 有备注时展示备注，没有备注时展示空状态文案
 
-Add a `记录血压` action beside existing `记录血糖` and `记录饮食` actions. Use the existing button and icon style so the page still feels like the same app.
+首页操作区增加 `记录血压` 按钮，和现有 `记录血糖`、`记录饮食` 放在一起。视觉风格沿用现有按钮样式，不做新的设计体系。
 
-### Records
+## 记录页
 
-Change record type switch from:
+记录类型切换从：
 
 - `血糖记录`
 - `饮食记录`
 
-to:
+扩展为：
 
 - `血糖记录`
 - `血压记录`
 - `饮食记录`
 
-For blood pressure records:
+血压记录列表展示：
 
-- List card shows date/time, `120/80 mmHg`, `心率 72 bpm`, and note.
-- Detail sheet shows the same reading, pulse, time, note, edit, and delete.
-- Form fields are systolic, diastolic, pulse, measuredAt, note.
-- Save behavior matches glucose: if not logged in, show login modal and preserve the form.
+- 日期和时间
+- 血压值，例如 `120/80 mmHg`
+- 心率，例如 `心率 72 bpm`
+- 备注
 
-### Chart
+血压详情弹层展示：
 
-Add a chart type switch:
+- 血压值
+- 心率
+- 测量时间
+- 备注
+- 编辑按钮
+- 删除按钮
+
+血压表单字段：
+
+- 收缩压
+- 舒张压
+- 心率
+- 测量时间
+- 备注
+
+保存逻辑和血糖一致：未登录时弹出登录窗口，并保留当前表单内容。
+
+## 曲线页
+
+曲线页增加图表类型切换：
 
 - `血糖趋势`
 - `血压趋势`
 
-Blood pressure chart:
+血压趋势图展示两条线：
 
-- Two line series: systolic and diastolic.
-- Shared x-axis by `measuredAt`.
-- Tooltip shows systolic, diastolic, pulse, and measured time.
-- Empty state says records will appear after adding blood pressure readings.
+- 收缩压
+- 舒张压
 
-The current glucose reference line remains only on the glucose chart. Blood pressure chart will not add medical threshold lines in this iteration.
+横轴使用测量时间。
 
-### Export
+提示浮层展示：
 
-Add a report type switch:
+- 收缩压
+- 舒张压
+- 心率
+- 测量时间
+
+当前血糖参考线只保留在血糖图上。血压图本次不加医学阈值线，避免误导。
+
+## 导出页
+
+导出页增加报告类型切换：
 
 - `血糖报告`
 - `血压报告`
 
-Blood pressure report includes:
+血压报告内容：
 
-- user display name or guest preview label
-- record count
-- average systolic/diastolic
-- average pulse
-- blood pressure trend chart
-- all blood pressure records
+- 使用人
+- 血压记录数
+- 平均收缩压和平均舒张压
+- 平均心率
+- 血压趋势图
+- 全部血压记录列表
 
-Existing export functions can stay generic by rendering the selected report area with `html2canvas` and `jsPDF`. File names should use `血压记录-<timestamp>.png` and `血压记录-<timestamp>.pdf` for blood pressure exports.
+导出逻辑继续复用现有 `html2canvas` 和 `jsPDF` 流程，只是根据当前报告类型渲染不同报告内容。
 
-## Testing Plan
+血压导出文件名：
 
-Unit tests:
+- 图片：`血压记录-<timestamp>.png`
+- PDF：`血压记录-<timestamp>.pdf`
 
-- blood pressure helper creation, sorting, latest record, stats, mutation, deletion
+## 测试计划
 
-API tests:
+单元测试：
 
-- authentication required for blood pressure endpoints
-- create, list, update, delete for current user
-- records isolated between users
-- invalid blood pressure payload rejected
+- 创建血压记录
+- 按时间排序
+- 获取最近一次血压
+- 计算血压统计
+- 新增和编辑记录时不修改原数组
+- 删除血压记录
 
-E2E tests:
+API 测试：
 
-- full blood pressure record flow: create, edit, detail, delete
-- blood pressure appears on home summary
-- blood pressure chart renders with two line series
-- blood pressure report exports PNG/PDF
-- guest save opens login modal
+- 血压接口需要登录
+- 当前用户可以新增、查看、编辑、删除血压记录
+- 不同用户之间血压记录隔离
+- 不合法血压参数会被拒绝
 
-Regression checks:
+端到端测试：
 
-- existing glucose flow still passes
-- existing food flow still passes
-- build still passes
+- 完整血压记录流程：新增、查看详情、编辑、删除
+- 首页能看到最近血压摘要
+- 曲线页能看到血压趋势图的两条线
+- 导出页能导出血压图片和 PDF
+- 未登录保存血压时弹出登录窗口
 
-## Migration and Deployment
+回归验证：
 
-Prisma schema change requires generating and applying a database migration before production deploy.
+- 原有血糖完整流程仍然通过
+- 原有饮食流程仍然通过
+- 构建仍然通过
 
-Local development can still use the memory repository without MySQL. Existing glucose and food data are not modified by the new schema.
+## 迁移和部署
 
-## Scope Control
+Prisma schema 变更后，正式环境需要生成并执行数据库迁移。
 
-This implementation should follow existing project patterns and avoid a broad architecture rewrite. The main expected touch points are:
+本地开发仍可继续使用内存仓库，不要求本地必须配置 MySQL。
+
+新增血压表不会修改现有血糖和饮食数据。
+
+## 改动范围
+
+这次实现应该沿用现有项目模式，避免大范围重构。
+
+预计改动文件：
 
 - `prisma/schema.prisma`
 - `server/app.js`
 - `server/index.js`
-- new blood pressure repositories
+- 新增血压记录仓库文件
 - `src/lib/api.js`
 - `src/lib/records.js`
 - `src/App.vue`

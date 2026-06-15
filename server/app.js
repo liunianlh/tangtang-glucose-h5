@@ -37,6 +37,11 @@ const bloodPressureRecordSchema = z.object({
   measuredAt: z.string().trim().refine((value) => !Number.isNaN(new Date(value).getTime()), 'Invalid datetime'),
   note: z.string().trim().max(500).optional().default('')
 });
+const weightRecordSchema = z.object({
+  weight: z.coerce.number().gte(50).lte(200),
+  measuredAt: z.string().trim().refine((value) => !Number.isNaN(new Date(value).getTime()), 'Invalid datetime'),
+  note: z.string().trim().max(500).optional().default('')
+});
 
 const usernameSchema = z.string().trim().min(2).max(24).regex(/^[\p{L}\p{N}_-]+$/u);
 const passwordSchema = z.string().min(6).max(72);
@@ -76,6 +81,13 @@ function sendInvalidFoodRecord(response, details) {
 function sendInvalidBloodPressureRecord(response, details) {
   response.status(400).json({
     error: 'INVALID_BLOOD_PRESSURE_RECORD',
+    details
+  });
+}
+
+function sendInvalidWeightRecord(response, details) {
+  response.status(400).json({
+    error: 'INVALID_WEIGHT_RECORD',
     details
   });
 }
@@ -124,6 +136,7 @@ export function createApp({
   recordRepository,
   userRepository,
   bloodPressureRecordRepository,
+  weightRecordRepository,
   foodRecordRepository,
   foodImageStorage,
   authSecret = process.env.AUTH_SECRET || 'glucose-dev-auth-secret'
@@ -413,6 +426,86 @@ export function createApp({
       if (!user) return;
 
       await bloodPressureRecordRepository.clearBloodPressureRecords(user.id);
+      response.status(204).end();
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get('/api/weight-records', async (request, response, next) => {
+    try {
+      const user = await authenticatedUser(request, response, userRepository, authSecret);
+      if (!user) return;
+
+      const records = await weightRecordRepository.listWeightRecords(user.id);
+      response.json({ records });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post('/api/weight-records', async (request, response, next) => {
+    const parsed = weightRecordSchema.safeParse(request.body);
+    if (!parsed.success) {
+      sendInvalidWeightRecord(response, parsed.error.flatten());
+      return;
+    }
+
+    try {
+      const user = await authenticatedUser(request, response, userRepository, authSecret);
+      if (!user) return;
+
+      const record = await weightRecordRepository.createWeightRecord(user.id, parsed.data);
+      response.status(201).json(record);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.put('/api/weight-records/:id', async (request, response, next) => {
+    const parsed = weightRecordSchema.safeParse(request.body);
+    if (!parsed.success) {
+      sendInvalidWeightRecord(response, parsed.error.flatten());
+      return;
+    }
+
+    try {
+      const user = await authenticatedUser(request, response, userRepository, authSecret);
+      if (!user) return;
+
+      const record = await weightRecordRepository.updateWeightRecord(user.id, request.params.id, parsed.data);
+      if (!record) {
+        response.status(404).json({ error: 'WEIGHT_RECORD_NOT_FOUND' });
+        return;
+      }
+      response.json(record);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.delete('/api/weight-records/:id', async (request, response, next) => {
+    try {
+      const user = await authenticatedUser(request, response, userRepository, authSecret);
+      if (!user) return;
+
+      const deleted = await weightRecordRepository.deleteWeightRecord(user.id, request.params.id);
+      if (!deleted) {
+        response.status(404).json({ error: 'WEIGHT_RECORD_NOT_FOUND' });
+        return;
+      }
+      response.status(204).end();
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.delete('/api/weight-records', async (request, response, next) => {
+    try {
+      const user = await authenticatedUser(request, response, userRepository, authSecret);
+      if (!user) return;
+
+      await weightRecordRepository.clearWeightRecords(user.id);
       response.status(204).end();
     } catch (error) {
       next(error);

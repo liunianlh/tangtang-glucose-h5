@@ -30,7 +30,7 @@
             </div>
           </div>
 
-          <div class="home-actions three-actions">
+          <div class="home-actions four-actions">
             <button class="primary-action glucose-action" type="button" @click="openNewRecord">
               <HeartPulse :size="21" />
               记录血糖
@@ -38,6 +38,10 @@
             <button class="secondary-action pressure-action" type="button" @click="openNewBloodPressureRecord">
               <Activity :size="21" />
               记录血压
+            </button>
+            <button class="secondary-action weight-action" type="button" @click="openNewWeightRecord">
+              <Scale :size="21" />
+              记录体重
             </button>
             <button class="secondary-action food-action" type="button" @click="openNewFoodRecord">
               <Utensils :size="21" />
@@ -76,6 +80,21 @@
             <p v-else>记录一次血压后，这里会显示最近读数。</p>
           </section>
 
+          <section class="card weight-summary-card">
+            <div class="card-heading">
+              <div>
+                <span class="section-label">最近体重</span>
+                <h2>{{ latestWeightRecord ? `${formatWeightValue(latestWeightRecord.weight)} kg` : '-- kg' }}</h2>
+              </div>
+              <button class="text-button" type="button" @click="openNewWeightRecord">记录</button>
+            </div>
+            <p v-if="latestWeightRecord">
+              {{ formatDateTime(latestWeightRecord.measuredAt) }}
+              <span> · {{ latestWeightRecord.note || '无备注' }}</span>
+            </p>
+            <p v-else>记录一次体重后，这里会显示最近读数。</p>
+          </section>
+
           <section class="card chart-card">
             <div class="card-heading">
               <div>
@@ -110,9 +129,11 @@
             </button>
           </div>
 
-          <div class="record-switch" role="tablist" aria-label="曲线类型">
+          <div class="record-switch four-way" role="tablist" aria-label="曲线类型">
             <button type="button" :class="{ active: activeChartKind === 'glucose' }" @click="activeChartKind = 'glucose'">血糖趋势</button>
             <button type="button" :class="{ active: activeChartKind === 'pressure' }" @click="activeChartKind = 'pressure'">血压趋势</button>
+            <button type="button" :class="{ active: activeChartKind === 'weight' }" @click="activeChartKind = 'weight'">体重趋势</button>
+            <button type="button" :class="{ active: activeChartKind === 'food' }" @click="activeChartKind = 'food'">饮食趋势</button>
           </div>
 
           <template v-if="activeChartKind === 'glucose'">
@@ -140,7 +161,7 @@
             </div>
           </template>
 
-          <template v-else>
+          <template v-else-if="activeChartKind === 'pressure'">
             <section class="card full-chart-card">
               <BloodPressureChart :records="bloodPressureRecords" />
               <div class="pressure-legend" aria-label="血压曲线说明">
@@ -165,6 +186,77 @@
             </div>
           </template>
 
+          <template v-else-if="activeChartKind === 'weight'">
+            <section class="card full-chart-card">
+              <WeightChart :records="weightRecords" />
+            </section>
+
+            <div class="summary-grid">
+              <article>
+                <span>最低</span>
+                <strong>{{ formattedWeightStats.lowest }}</strong>
+              </article>
+              <article>
+                <span>平均</span>
+                <strong>{{ formattedWeightStats.average }}</strong>
+              </article>
+              <article>
+                <span>最高</span>
+                <strong>{{ formattedWeightStats.highest }}</strong>
+              </article>
+            </div>
+          </template>
+
+          <template v-else>
+            <section class="card full-chart-card food-chart-card">
+              <div class="card-heading">
+                <div>
+                  <span class="section-label">最近 7 天</span>
+                  <h2>饮食记录频次</h2>
+                </div>
+              </div>
+              <FoodFrequencyChart :daily-counts="foodDailyCounts" />
+            </section>
+
+            <div class="summary-grid">
+              <article>
+                <span>总记录</span>
+                <strong>{{ foodRecords.length }}</strong>
+              </article>
+              <article>
+                <span>今日</span>
+                <strong>{{ todayFoodRecordCount }}</strong>
+              </article>
+              <article>
+                <span>有图</span>
+                <strong>{{ foodImageCount }}</strong>
+              </article>
+            </div>
+
+            <section class="card food-timeline-card">
+              <div class="card-heading">
+                <div>
+                  <span class="section-label">最近饮食</span>
+                  <h2>时间轴</h2>
+                </div>
+              </div>
+              <div v-if="recentFoodTimelineRecords.length" class="food-timeline-list">
+                <article v-for="record in recentFoodTimelineRecords" :key="record.id" class="food-timeline-item">
+                  <div class="food-thumb" aria-hidden="true">
+                    <img v-if="foodImageUrls[record.imageKey]" :src="foodImageUrls[record.imageKey]" alt="" />
+                    <Utensils v-else :size="20" />
+                  </div>
+                  <div>
+                    <span>{{ record.mealType }} · {{ formatDateTime(record.eatenAt) }}</span>
+                    <p>{{ record.content }}</p>
+                    <small>{{ record.note || '无备注' }}</small>
+                  </div>
+                </article>
+              </div>
+              <p v-else class="timeline-empty">记录饮食后，这里会按时间展示最近 10 条。</p>
+            </section>
+          </template>
+
           <section class="card insight-card">
             <span class="section-label">小提示</span>
             <p>{{ activeChartInsight }}</p>
@@ -183,9 +275,10 @@
             </button>
           </div>
 
-          <div class="record-switch three-way" role="tablist" aria-label="记录类型">
+          <div class="record-switch four-way" role="tablist" aria-label="记录类型">
             <button type="button" :class="{ active: activeRecordKind === 'glucose' }" @click="activeRecordKind = 'glucose'">血糖记录</button>
             <button type="button" :class="{ active: activeRecordKind === 'pressure' }" @click="activeRecordKind = 'pressure'">血压记录</button>
+            <button type="button" :class="{ active: activeRecordKind === 'weight' }" @click="activeRecordKind = 'weight'">体重记录</button>
             <button type="button" :class="{ active: activeRecordKind === 'food' }" @click="activeRecordKind = 'food'">饮食记录</button>
           </div>
 
@@ -238,6 +331,31 @@
             </article>
           </div>
 
+          <div v-else-if="activeRecordKind === 'weight' && weightRecords.length" class="record-list">
+            <article v-for="record in sortedWeightRecords" :key="record.id" class="record-card weight-record-card" @click="detailWeightRecord = record">
+              <div class="record-date">
+                <span>{{ dayLabel(record.measuredAt) }}</span>
+                <small>{{ timeLabel(record.measuredAt) }}</small>
+              </div>
+              <div class="record-info">
+                <span>{{ formatDateTime(record.measuredAt) }}</span>
+                <p>{{ record.note || '没有备注' }}</p>
+              </div>
+              <div class="record-actions">
+                <strong>{{ formatWeightValue(record.weight) }}</strong>
+                <small>kg</small>
+                <button
+                  class="record-delete-button"
+                  type="button"
+                  :aria-label="`删除${formatWeightValue(record.weight)}kg体重记录`"
+                  @click.stop="confirmWeightDelete = record"
+                >
+                  <Trash2 :size="16" />
+                </button>
+              </div>
+            </article>
+          </div>
+
           <div v-else-if="activeRecordKind === 'food' && foodRecords.length" class="record-list">
             <article v-for="record in sortedFoodRecords" :key="record.id" class="record-card food-record-card" @click="detailFoodRecord = record">
               <div class="food-thumb" aria-hidden="true">
@@ -281,9 +399,11 @@
             </button>
           </div>
 
-          <div class="record-switch" role="tablist" aria-label="报告类型">
+          <div class="record-switch four-way" role="tablist" aria-label="报告类型">
             <button type="button" :class="{ active: activeReportKind === 'glucose' }" @click="activeReportKind = 'glucose'">血糖报告</button>
             <button type="button" :class="{ active: activeReportKind === 'pressure' }" @click="activeReportKind = 'pressure'">血压报告</button>
+            <button type="button" :class="{ active: activeReportKind === 'weight' }" @click="activeReportKind = 'weight'">体重报告</button>
+            <button type="button" :class="{ active: activeReportKind === 'food' }" @click="activeReportKind = 'food'">饮食报告</button>
           </div>
 
           <section ref="reportRef" class="report-card">
@@ -312,7 +432,7 @@
               </div>
             </template>
 
-            <template v-else>
+            <template v-else-if="activeReportKind === 'pressure'">
               <div class="report-head">
                 <div>
                   <span>使用人：{{ currentUser?.displayName || '访客预览' }}</span>
@@ -333,6 +453,65 @@
                     <small>{{ record.note || pressurePulseText(record) }}</small>
                   </span>
                   <strong>{{ record.systolic }}/{{ record.diastolic }} mmHg</strong>
+                </div>
+              </div>
+            </template>
+
+            <template v-else-if="activeReportKind === 'weight'">
+              <div class="report-head">
+                <div>
+                  <span>使用人：{{ currentUser?.displayName || '访客预览' }}</span>
+                  <h3>体重记录汇总</h3>
+                </div>
+                <div class="report-badge">{{ weightStats.count }} 条</div>
+              </div>
+              <div class="report-stats">
+                <div><span>平均</span><strong>{{ formattedWeightStats.average }}</strong></div>
+                <div><span>最高</span><strong>{{ formattedWeightStats.highest }}</strong></div>
+                <div><span>最低</span><strong>{{ formattedWeightStats.lowest }}</strong></div>
+              </div>
+              <WeightChart :records="weightRecords" compact />
+              <div class="report-list">
+                <div v-for="record in sortedWeightRecords" :key="record.id">
+                  <span>
+                    <b>{{ formatDateTime(record.measuredAt) }}</b>
+                    <small>{{ record.note || '无备注' }}</small>
+                  </span>
+                  <strong>{{ formatWeightValue(record.weight) }} kg</strong>
+                </div>
+              </div>
+            </template>
+
+            <template v-else>
+              <div class="report-head">
+                <div>
+                  <span>使用人：{{ currentUser?.displayName || '访客预览' }}</span>
+                  <h3>饮食记录汇总</h3>
+                </div>
+                <div class="report-badge">{{ foodRecords.length }} 条</div>
+              </div>
+              <div class="report-stats">
+                <div><span>今日</span><strong>{{ todayFoodRecordCount }}</strong></div>
+                <div><span>有图</span><strong>{{ foodImageCount }}</strong></div>
+                <div><span>餐次</span><strong>{{ foodMealTypeEntries.length || '--' }}</strong></div>
+              </div>
+              <FoodFrequencyChart :daily-counts="foodDailyCounts" />
+              <div v-if="foodMealTypeEntries.length" class="meal-type-report">
+                <span v-for="[mealType, count] in foodMealTypeEntries" :key="mealType">
+                  {{ mealType }} {{ count }}
+                </span>
+              </div>
+              <div class="report-list food-report-list">
+                <div v-for="record in sortedFoodRecords" :key="record.id">
+                  <div class="food-report-thumb" aria-hidden="true">
+                    <img v-if="foodImageUrls[record.imageKey]" :src="foodImageUrls[record.imageKey]" alt="" />
+                    <Utensils v-else :size="19" />
+                  </div>
+                  <span>
+                    <b>{{ record.mealType }} · {{ formatDateTime(record.eatenAt) }}</b>
+                    <small>{{ record.content }}</small>
+                    <small v-if="record.note">{{ record.note }}</small>
+                  </span>
                 </div>
               </div>
             </template>
@@ -459,10 +638,6 @@
             退出登录
           </button>
 
-          <button v-if="currentUser" class="secondary-action danger" type="button" @click="showResetConfirm = true">
-            <Trash2 :size="19" />
-            清空全部记录
-          </button>
         </section>
       </div>
 
@@ -635,6 +810,41 @@
         </form>
       </div>
 
+      <div v-if="showWeightForm" class="modal-backdrop" @click.self="!isSavingWeightRecord && closeWeightForm()">
+        <form class="sheet" :aria-busy="isSavingWeightRecord" @submit.prevent="saveWeightRecord">
+          <div class="sheet-handle"></div>
+          <div class="sheet-head">
+            <h2>{{ editingWeightRecord ? '编辑体重' : '记录一次体重' }}</h2>
+            <button class="icon-button" type="button" aria-label="关闭" :disabled="isSavingWeightRecord" @click="closeWeightForm">
+              <X :size="20" />
+            </button>
+          </div>
+
+          <label class="field">
+            <span>体重</span>
+            <div class="value-input">
+              <input v-model="weightForm.weight" aria-label="体重" type="number" inputmode="decimal" min="50" max="200" step="0.1" placeholder="例如 62.5" required />
+              <em>kg</em>
+            </div>
+          </label>
+
+          <label class="field">
+            <span>测量时间</span>
+            <input v-model="weightForm.measuredAt" type="datetime-local" required />
+          </label>
+
+          <label class="field">
+            <span>备注</span>
+            <textarea v-model="weightForm.note" rows="3" maxlength="500" placeholder="比如晨起、运动后、睡前"></textarea>
+          </label>
+
+          <button class="primary-action" type="submit" :disabled="isSavingWeightRecord">
+            <Check :size="20" />
+            {{ isSavingWeightRecord ? '保存中...' : '保存体重' }}
+          </button>
+        </form>
+      </div>
+
       <div v-if="showFoodForm" class="modal-backdrop" @click.self="!isSavingFoodRecord && closeFoodForm()">
         <form class="sheet" :aria-busy="isSavingFoodRecord" @submit.prevent="saveFoodRecord">
           <div class="sheet-handle"></div>
@@ -741,6 +951,33 @@
         </section>
       </div>
 
+      <div v-if="detailWeightRecord" class="modal-backdrop" @click.self="detailWeightRecord = null">
+        <section class="sheet detail-sheet">
+          <div class="sheet-handle"></div>
+          <div class="sheet-head">
+            <h2>体重详情</h2>
+            <button class="icon-button" type="button" aria-label="关闭" @click="detailWeightRecord = null">
+              <X :size="20" />
+            </button>
+          </div>
+          <div class="detail-value weight-detail-value">
+            {{ formatWeightValue(detailWeightRecord.weight) }} <span>kg</span>
+          </div>
+          <p>{{ formatDateTime(detailWeightRecord.measuredAt) }}</p>
+          <div class="detail-note">{{ detailWeightRecord.note || '没有备注' }}</div>
+          <div class="split-actions">
+            <button class="secondary-action" type="button" @click="startEditWeight(detailWeightRecord)">
+              <Pencil :size="18" />
+              编辑
+            </button>
+            <button class="secondary-action danger" type="button" @click="confirmWeightDelete = detailWeightRecord">
+              <Trash2 :size="18" />
+              删除
+            </button>
+          </div>
+        </section>
+      </div>
+
       <div v-if="detailFoodRecord" class="modal-backdrop" @click.self="detailFoodRecord = null">
         <section class="sheet detail-sheet food-detail-sheet">
           <div class="sheet-handle"></div>
@@ -803,13 +1040,13 @@
         </section>
       </div>
 
-      <div v-if="showResetConfirm" class="modal-backdrop" @click.self="showResetConfirm = false">
+      <div v-if="confirmWeightDelete" class="modal-backdrop" @click.self="confirmWeightDelete = null">
         <section class="confirm-box">
-          <h2>清空全部记录？</h2>
-          <p>会移除当前使用人的血糖、血压和饮食记录。</p>
+          <h2>删除这条体重？</h2>
+          <p>删除后首页、曲线、历史列表和导出数据会同步更新。</p>
           <div class="split-actions">
-            <button class="secondary-action" type="button" @click="showResetConfirm = false">取消</button>
-            <button class="secondary-action danger solid-danger" type="button" @click="resetRecords">清空</button>
+            <button class="secondary-action" type="button" @click="confirmWeightDelete = null">取消</button>
+            <button class="secondary-action danger solid-danger" type="button" @click="removeWeightRecord(confirmWeightDelete.id)">删除</button>
           </div>
         </section>
       </div>
@@ -841,6 +1078,7 @@ import {
   Pencil,
   Plus,
   RefreshCw,
+  Scale,
   Settings,
   Sparkles,
   Trash2,
@@ -854,27 +1092,36 @@ import {
   formatDateTime,
   formatGlucoseLimit,
   formatGlucoseValue,
+  getFoodImageCount,
+  getFoodMealTypeStats,
   getBloodPressureStats,
   getLatestBloodPressureRecord,
+  getLatestWeightRecord,
   getLatestRecord,
+  getRecentFoodDailyCounts,
   getRecordStats,
+  getTodayFoodRecordCount,
+  getWeightStats,
   normalizeChartReferenceLimit,
   normalizeGlucoseValue,
+  normalizeWeightValue,
   sortBloodPressureRecordsByTime,
+  sortFoodRecordsByTime,
+  sortWeightRecordsByTime,
   sortRecordsByTime,
-  toLocalInputValue
+  toLocalInputValue,
+  formatWeightValue
 } from './lib/records.js';
 import {
   clearAuthSession,
-  clearBloodPressureRecordsOnServer,
-  clearFoodRecordsOnServer,
-  clearRecordsOnServer,
   createBloodPressureRecordOnServer,
   createFoodRecordOnServer,
   createRecordOnServer,
+  createWeightRecordOnServer,
   deleteBloodPressureRecordOnServer,
   deleteFoodRecordOnServer,
   deleteRecordOnServer,
+  deleteWeightRecordOnServer,
   fetchFoodImageBlob,
   getCaptchaChallenge,
   getCurrentUser,
@@ -883,12 +1130,14 @@ import {
   listBloodPressureRecords,
   listFoodRecords,
   listRecords,
+  listWeightRecords,
   registerAccount,
   setAuthSession,
   updateBloodPressureRecordOnServer,
   updateCurrentUserProfile,
   updateFoodRecordOnServer,
-  updateRecordOnServer
+  updateRecordOnServer,
+  updateWeightRecordOnServer
 } from './lib/api.js';
 
 const tabs = [
@@ -907,22 +1156,26 @@ const activeChartKind = ref('glucose');
 const activeReportKind = ref('glucose');
 const records = ref([]);
 const bloodPressureRecords = ref([]);
+const weightRecords = ref([]);
 const foodRecords = ref([]);
 const foodImageUrls = ref({});
 const showAuthModal = ref(false);
 const showForm = ref(false);
 const showBloodPressureForm = ref(false);
+const showWeightForm = ref(false);
 const showFoodForm = ref(false);
 const editingRecord = ref(null);
 const editingBloodPressureRecord = ref(null);
+const editingWeightRecord = ref(null);
 const editingFoodRecord = ref(null);
 const detailRecord = ref(null);
 const detailBloodPressureRecord = ref(null);
+const detailWeightRecord = ref(null);
 const detailFoodRecord = ref(null);
 const confirmDelete = ref(null);
 const confirmBloodPressureDelete = ref(null);
+const confirmWeightDelete = ref(null);
 const confirmFoodDelete = ref(null);
-const showResetConfirm = ref(false);
 const toast = ref('');
 const authMode = ref('login');
 const authError = ref('');
@@ -933,6 +1186,7 @@ const isExporting = ref(false);
 const isLoadingRecords = ref(false);
 const isSavingRecord = ref(false);
 const isSavingBloodPressureRecord = ref(false);
+const isSavingWeightRecord = ref(false);
 const isSavingFoodRecord = ref(false);
 const isEditingProfile = ref(false);
 const isSavingProfile = ref(false);
@@ -965,6 +1219,11 @@ const bloodPressureForm = ref({
   measuredAt: toLocalInputValue(),
   note: ''
 });
+const weightForm = ref({
+  weight: '',
+  measuredAt: toLocalInputValue(),
+  note: ''
+});
 const foodForm = ref({
   mealType: '早餐',
   eatenAt: toLocalInputValue(),
@@ -976,11 +1235,20 @@ const foodForm = ref({
 
 const sortedRecords = computed(() => sortRecordsByTime(records.value));
 const sortedBloodPressureRecords = computed(() => sortBloodPressureRecordsByTime(bloodPressureRecords.value));
-const sortedFoodRecords = computed(() => [...foodRecords.value].sort((left, right) => new Date(right.eatenAt) - new Date(left.eatenAt)));
+const sortedWeightRecords = computed(() => sortWeightRecordsByTime(weightRecords.value));
+const sortedFoodRecords = computed(() => sortFoodRecordsByTime(foodRecords.value));
 const latestRecord = computed(() => getLatestRecord(records.value));
 const latestBloodPressureRecord = computed(() => getLatestBloodPressureRecord(bloodPressureRecords.value));
+const latestWeightRecord = computed(() => getLatestWeightRecord(weightRecords.value));
 const stats = computed(() => getRecordStats(records.value));
 const bloodPressureStats = computed(() => getBloodPressureStats(bloodPressureRecords.value));
+const weightStats = computed(() => getWeightStats(weightRecords.value));
+const foodDailyCounts = computed(() => getRecentFoodDailyCounts(foodRecords.value));
+const foodImageCount = computed(() => getFoodImageCount(foodRecords.value));
+const todayFoodRecordCount = computed(() => getTodayFoodRecordCount(foodRecords.value));
+const foodMealTypeStats = computed(() => getFoodMealTypeStats(foodRecords.value));
+const foodMealTypeEntries = computed(() => Object.entries(foodMealTypeStats.value).sort((left, right) => right[1] - left[1]));
+const recentFoodTimelineRecords = computed(() => sortedFoodRecords.value.slice(0, 10));
 const currentUser = computed(() => currentAuth.value?.user || null);
 const formattedStats = computed(() => ({
   average: stats.value.count ? formatGlucoseValue(stats.value.average) : '--',
@@ -988,23 +1256,37 @@ const formattedStats = computed(() => ({
   lowest: stats.value.count ? formatGlucoseValue(stats.value.lowest) : '--'
 }));
 const formattedChartReferenceLimit = computed(() => formatGlucoseLimit(chartReferenceLimit.value));
+const formattedWeightStats = computed(() => ({
+  average: weightStats.value.count ? formatWeightValue(weightStats.value.average) : '--',
+  highest: weightStats.value.count ? formatWeightValue(weightStats.value.highest) : '--',
+  lowest: weightStats.value.count ? formatWeightValue(weightStats.value.lowest) : '--'
+}));
 const recordPageTitle = computed(() => {
   if (activeRecordKind.value === 'pressure') return `${bloodPressureRecords.value.length} 条血压记录`;
+  if (activeRecordKind.value === 'weight') return `${weightRecords.value.length} 条体重记录`;
   if (activeRecordKind.value === 'food') return `${foodRecords.value.length} 条饮食记录`;
   return `${records.value.length} 条血糖记录`;
 });
 const emptyRecordTitle = computed(() => {
   if (activeRecordKind.value === 'pressure') return '还没有血压记录';
+  if (activeRecordKind.value === 'weight') return '还没有体重记录';
   if (activeRecordKind.value === 'food') return '还没有饮食记录';
   return '还没有血糖记录';
 });
 const emptyRecordBody = computed(() => {
   if (activeRecordKind.value === 'pressure') return '点一下新增按钮，记录最近一次血压。';
+  if (activeRecordKind.value === 'weight') return '点一下新增按钮，记录最近一次体重。';
   if (activeRecordKind.value === 'food') return '拍一张饭菜，顺手记下吃了什么。';
   return '点一下新增按钮，先记录最近一次测量。';
 });
 const canExportActiveReport = computed(() => (
-  activeReportKind.value === 'pressure' ? bloodPressureRecords.value.length > 0 : records.value.length > 0
+  activeReportKind.value === 'pressure'
+    ? bloodPressureRecords.value.length > 0
+    : activeReportKind.value === 'weight'
+      ? weightRecords.value.length > 0
+      : activeReportKind.value === 'food'
+        ? foodRecords.value.length > 0
+        : records.value.length > 0
 ));
 const avatarInitial = computed(() => {
   const source = currentUser.value?.displayName || currentUser.value?.username || '糖';
@@ -1028,8 +1310,24 @@ const pressureChartInsight = computed(() => {
   if (bloodPressureStats.value.count < 3) return '血压记录还比较少，多补几条后趋势会更清楚。';
   return '血压趋势已按收缩压和舒张压分开展示，方便复盘日常变化。';
 });
+const weightChartInsight = computed(() => {
+  if (!weightRecords.value.length) return '还没有可分析的数据，先记录一次体重。';
+  if (weightStats.value.count < 3) return '体重记录还比较少，多补几条后趋势会更清楚。';
+  return '体重趋势会按时间展示最近变化，适合做长期观察。';
+});
+const foodChartInsight = computed(() => {
+  if (!foodRecords.value.length) return '还没有可分析的数据，先记录一次饮食。';
+  if (todayFoodRecordCount.value === 0) return '今天还没有饮食记录，补一条后当天统计会同步更新。';
+  return '饮食趋势按记录频次展示，适合回看每天有没有漏记。';
+});
 const activeChartInsight = computed(() => (
-  activeChartKind.value === 'pressure' ? pressureChartInsight.value : chartInsight.value
+  activeChartKind.value === 'pressure'
+    ? pressureChartInsight.value
+    : activeChartKind.value === 'weight'
+      ? weightChartInsight.value
+      : activeChartKind.value === 'food'
+        ? foodChartInsight.value
+        : chartInsight.value
 ));
 
 const GlucoseChart = defineComponent({
@@ -1227,6 +1525,123 @@ const BloodPressureChart = defineComponent({
   }
 });
 
+const WeightChart = defineComponent({
+  name: 'WeightChart',
+  props: {
+    records: { type: Array, required: true },
+    compact: { type: Boolean, default: false }
+  },
+  setup(props) {
+    const activePoint = ref(null);
+
+    return () => {
+      const width = props.compact ? 320 : 340;
+      const height = props.compact ? 128 : 186;
+      const padding = props.compact ? 18 : 24;
+      const ordered = sortWeightRecordsByTime(props.records).reverse().slice(-10);
+
+      if (!ordered.length) {
+        return h('div', { class: ['chart-empty', props.compact && 'compact'] }, [
+          h(Scale, { size: 28 }),
+          h('span', '记录后这里会出现体重曲线')
+        ]);
+      }
+
+      const values = ordered.map((record) => Number(record.weight));
+      const minValue = Math.min(...values);
+      const maxValue = Math.max(...values);
+      const rangePadding = Math.max(1, (maxValue - minValue) * 0.2);
+      const min = minValue - rangePadding;
+      const max = maxValue + rangePadding;
+      const xStep = ordered.length === 1 ? 0 : (width - padding * 2) / (ordered.length - 1);
+      const points = ordered.map((record, index) => {
+        const x = ordered.length === 1 ? width / 2 : padding + index * xStep;
+        const y = height - padding - ((Number(record.weight) - min) / (max - min)) * (height - padding * 2);
+        return { x, y, record };
+      });
+      const path = points.length === 1
+        ? `M ${points[0].x - 12} ${points[0].y} L ${points[0].x + 12} ${points[0].y + 1}`
+        : points.map((point, index) => `${index === 0 ? 'M' : 'L'} ${point.x} ${point.y}`).join(' ');
+      const tooltipPoint = activePoint.value;
+      const tooltipSide = tooltipPoint?.x < width * 0.22
+        ? 'align-left'
+        : tooltipPoint?.x > width * 0.78
+          ? 'align-right'
+          : 'align-center';
+
+      return h('div', { class: ['chart-wrap', 'weight-chart-wrap', props.compact && 'compact'] }, [
+        h('svg', { viewBox: `0 0 ${width} ${height}`, role: 'img', 'aria-label': '体重趋势曲线' }, [
+          h('path', { d: path, class: 'chart-line weight-line' }),
+          points.map((point) => h('g', {
+            key: point.record.id,
+            class: ['chart-point', tooltipPoint?.record.id === point.record.id && 'active'],
+            onMouseenter: () => { activePoint.value = point; },
+            onMouseleave: () => { activePoint.value = null; },
+            onFocusin: () => { activePoint.value = point; },
+            onFocusout: () => { activePoint.value = null; },
+            onClick: () => { activePoint.value = point; }
+          }, [
+            h('circle', { cx: point.x, cy: point.y, r: props.compact ? 4 : 5, class: 'chart-dot weight-dot' }),
+            h('circle', {
+              cx: point.x,
+              cy: point.y,
+              r: props.compact ? 15 : 18,
+              class: 'chart-hit-area',
+              tabindex: 0,
+              role: 'button',
+              'aria-label': `${formatDateTime(point.record.measuredAt)} 体重 ${formatWeightValue(point.record.weight)} kg`
+            }),
+            !props.compact && h('text', { x: point.x, y: point.y - 10, class: 'chart-label', 'text-anchor': 'middle' }, formatWeightValue(point.record.weight))
+          ]))
+        ]),
+        tooltipPoint && h('div', {
+          class: ['chart-tooltip', tooltipSide],
+          style: {
+            left: `${(tooltipPoint.x / width) * 100}%`,
+            top: `${(tooltipPoint.y / height) * 100}%`
+          }
+        }, [
+          h('span', `体重 ${formatWeightValue(tooltipPoint.record.weight)} kg`),
+          h('strong', tooltipPoint.record.note || '无备注'),
+          h('small', `记录时间：${formatDateTime(tooltipPoint.record.measuredAt)}`)
+        ]),
+        h('div', { class: 'chart-axis' }, [
+          h('span', ordered[0] ? shortDate(ordered[0].measuredAt) : ''),
+          h('span', '体重 kg'),
+          h('span', ordered.at(-1) ? shortDate(ordered.at(-1).measuredAt) : '')
+        ])
+      ]);
+    };
+  }
+});
+
+const FoodFrequencyChart = defineComponent({
+  name: 'FoodFrequencyChart',
+  props: {
+    dailyCounts: { type: Array, required: true }
+  },
+  setup(props) {
+    return () => {
+      const maxCount = Math.max(1, ...props.dailyCounts.map((item) => item.count));
+
+      return h('div', { class: 'food-frequency-chart', role: 'img', 'aria-label': '最近7天饮食记录次数' }, props.dailyCounts.map((item) => h('div', {
+        key: item.key,
+        class: 'food-frequency-day'
+      }, [
+        h('div', { class: 'food-frequency-bar-wrap' }, [
+          h('span', {
+            class: ['food-frequency-bar', item.count > 0 && 'active'],
+            style: { height: `${Math.max(12, (item.count / maxCount) * 96)}%` }
+          }, [
+            h('em', String(item.count))
+          ])
+        ]),
+        h('small', item.label)
+      ])));
+    };
+  }
+});
+
 const EmptyState = defineComponent({
   name: 'EmptyState',
   props: {
@@ -1271,6 +1686,7 @@ async function restoreAuth() {
     currentAuth.value = null;
     records.value = [];
     bloodPressureRecords.value = [];
+    weightRecords.value = [];
     foodRecords.value = [];
     revokeFoodImageUrls();
   } finally {
@@ -1347,7 +1763,7 @@ async function submitAuth() {
 
     currentAuth.value = auth;
     setAuthSession(auth);
-    if (!showForm.value && !showBloodPressureForm.value && !showFoodForm.value) {
+    if (!showForm.value && !showBloodPressureForm.value && !showWeightForm.value && !showFoodForm.value) {
       activeTab.value = 'home';
     }
     authForm.value = {
@@ -1383,6 +1799,7 @@ function logout() {
   currentAuth.value = null;
   records.value = [];
   bloodPressureRecords.value = [];
+  weightRecords.value = [];
   foodRecords.value = [];
   revokeFoodImageUrls();
   revokeFoodPreviewUrl();
@@ -1390,12 +1807,15 @@ function logout() {
   showAuthModal.value = false;
   showForm.value = false;
   showBloodPressureForm.value = false;
+  showWeightForm.value = false;
   showFoodForm.value = false;
   detailRecord.value = null;
   detailBloodPressureRecord.value = null;
+  detailWeightRecord.value = null;
   detailFoodRecord.value = null;
   confirmDelete.value = null;
   confirmBloodPressureDelete.value = null;
+  confirmWeightDelete.value = null;
   confirmFoodDelete.value = null;
   showToast('已退出登录');
   refreshCaptcha();
@@ -1462,18 +1882,21 @@ async function loadRecords(showError = true) {
 
   isLoadingRecords.value = true;
   try {
-    const [nextRecords, nextBloodPressureRecords, nextFoodRecords] = await Promise.all([
+    const [nextRecords, nextBloodPressureRecords, nextWeightRecords, nextFoodRecords] = await Promise.all([
       listRecords(),
       listBloodPressureRecords(),
+      listWeightRecords(),
       listFoodRecords()
     ]);
     records.value = nextRecords;
     bloodPressureRecords.value = nextBloodPressureRecords;
+    weightRecords.value = nextWeightRecords;
     foodRecords.value = nextFoodRecords;
     await refreshFoodImageUrls(nextFoodRecords);
   } catch (error) {
     records.value = [];
     bloodPressureRecords.value = [];
+    weightRecords.value = [];
     foodRecords.value = [];
     revokeFoodImageUrls();
     if (error.status === 401) {
@@ -1521,6 +1944,21 @@ function closeBloodPressureForm() {
   editingBloodPressureRecord.value = null;
 }
 
+function openNewWeightRecord() {
+  editingWeightRecord.value = null;
+  weightForm.value = {
+    weight: '',
+    measuredAt: toLocalInputValue(),
+    note: ''
+  };
+  showWeightForm.value = true;
+}
+
+function closeWeightForm() {
+  showWeightForm.value = false;
+  editingWeightRecord.value = null;
+}
+
 function openNewFoodRecord() {
   editingFoodRecord.value = null;
   revokeFoodPreviewUrl();
@@ -1544,6 +1982,8 @@ function closeFoodForm() {
 function openActiveRecordForm() {
   if (activeRecordKind.value === 'pressure') {
     openNewBloodPressureRecord();
+  } else if (activeRecordKind.value === 'weight') {
+    openNewWeightRecord();
   } else if (activeRecordKind.value === 'food') {
     openNewFoodRecord();
   } else {
@@ -1554,6 +1994,10 @@ function openActiveRecordForm() {
 function openActiveChartRecord() {
   if (activeChartKind.value === 'pressure') {
     openNewBloodPressureRecord();
+  } else if (activeChartKind.value === 'weight') {
+    openNewWeightRecord();
+  } else if (activeChartKind.value === 'food') {
+    openNewFoodRecord();
   } else {
     openNewRecord();
   }
@@ -1562,6 +2006,10 @@ function openActiveChartRecord() {
 function openActiveReportRecord() {
   if (activeReportKind.value === 'pressure') {
     openNewBloodPressureRecord();
+  } else if (activeReportKind.value === 'weight') {
+    openNewWeightRecord();
+  } else if (activeReportKind.value === 'food') {
+    openNewFoodRecord();
   } else {
     openNewRecord();
   }
@@ -1677,6 +2125,40 @@ async function saveBloodPressureRecord() {
   }
 }
 
+async function saveWeightRecord() {
+  if (isSavingWeightRecord.value) return;
+  if (!currentUser.value) {
+    showToast('登录后再保存体重');
+    openAuthModal('login');
+    return;
+  }
+
+  isSavingWeightRecord.value = true;
+  const wasEditing = Boolean(editingWeightRecord.value);
+  const payload = {
+    weight: normalizeWeightValue(weightForm.value.weight),
+    measuredAt: weightForm.value.measuredAt,
+    note: weightForm.value.note
+  };
+
+  try {
+    if (wasEditing) {
+      await updateWeightRecordOnServer(editingWeightRecord.value.id, payload);
+    } else {
+      await createWeightRecordOnServer(payload);
+    }
+    await loadRecords(false);
+    closeWeightForm();
+    activeTab.value = 'records';
+    activeRecordKind.value = 'weight';
+    showToast(wasEditing ? '体重已更新' : '体重已保存');
+  } catch {
+    showToast('体重保存失败');
+  } finally {
+    isSavingWeightRecord.value = false;
+  }
+}
+
 async function saveFoodRecord() {
   if (isSavingFoodRecord.value) return;
   if (!foodForm.value.content.trim()) {
@@ -1735,6 +2217,17 @@ function startEditBloodPressure(record) {
   showBloodPressureForm.value = true;
 }
 
+function startEditWeight(record) {
+  detailWeightRecord.value = null;
+  editingWeightRecord.value = record;
+  weightForm.value = {
+    weight: record.weight,
+    measuredAt: record.measuredAt,
+    note: record.note
+  };
+  showWeightForm.value = true;
+}
+
 function startEditFood(record) {
   detailFoodRecord.value = null;
   editingFoodRecord.value = record;
@@ -1774,6 +2267,18 @@ async function removeBloodPressureRecord(id) {
   }
 }
 
+async function removeWeightRecord(id) {
+  try {
+    await deleteWeightRecordOnServer(id);
+    await loadRecords(false);
+    confirmWeightDelete.value = null;
+    detailWeightRecord.value = null;
+    showToast('体重已删除');
+  } catch {
+    showToast('删除失败，请检查 API 服务');
+  }
+}
+
 async function removeFoodRecord(id) {
   try {
     await deleteFoodRecordOnServer(id);
@@ -1783,25 +2288,6 @@ async function removeFoodRecord(id) {
     showToast('饮食已删除');
   } catch {
     showToast('删除失败，请检查 API 服务');
-  }
-}
-
-async function resetRecords() {
-  try {
-    await Promise.all([
-      clearRecordsOnServer(),
-      clearBloodPressureRecordsOnServer(),
-      clearFoodRecordsOnServer()
-    ]);
-    records.value = [];
-    bloodPressureRecords.value = [];
-    foodRecords.value = [];
-    revokeFoodImageUrls();
-    showResetConfirm.value = false;
-    activeTab.value = 'home';
-    showToast('记录已清空');
-  } catch {
-    showToast('清空失败，请检查 API 服务');
   }
 }
 
@@ -1878,7 +2364,13 @@ async function exportReport(type) {
   await nextTick();
 
   try {
-    const reportName = activeReportKind.value === 'pressure' ? '血压记录' : '血糖记录';
+    const reportName = activeReportKind.value === 'pressure'
+      ? '血压记录'
+      : activeReportKind.value === 'weight'
+        ? '体重记录'
+        : activeReportKind.value === 'food'
+          ? '饮食记录'
+          : '血糖记录';
     const canvas = await html2canvas(reportRef.value, {
       backgroundColor: '#fff7fb',
       scale: 2,

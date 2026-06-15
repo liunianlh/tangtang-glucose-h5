@@ -152,6 +152,108 @@ export function deleteBloodPressureRecord(records, id) {
   return sortBloodPressureRecordsByTime(records.filter((record) => record.id !== id));
 }
 
+export function normalizeWeightValue(value) {
+  const numericValue = Number(value);
+  return Number((Math.round((numericValue + Number.EPSILON) * 10) / 10).toFixed(1));
+}
+
+export function formatWeightValue(value) {
+  return normalizeWeightValue(value).toFixed(1);
+}
+
+export function createWeightRecord({
+  id,
+  weight,
+  measuredAt = toLocalInputValue(),
+  note = ''
+}) {
+  return {
+    id: id || `weight-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    weight: normalizeWeightValue(weight),
+    measuredAt,
+    note: note.trim()
+  };
+}
+
+export function sortWeightRecordsByTime(records) {
+  return [...records].sort((left, right) => new Date(right.measuredAt) - new Date(left.measuredAt));
+}
+
+export function getLatestWeightRecord(records) {
+  return sortWeightRecordsByTime(records)[0] || null;
+}
+
+export function getWeightStats(records) {
+  if (!records.length) {
+    return {
+      count: 0,
+      average: 0,
+      highest: 0,
+      lowest: 0
+    };
+  }
+
+  const values = records.map((record) => Number(record.weight));
+  const total = values.reduce((sum, value) => sum + value, 0);
+
+  return {
+    count: records.length,
+    average: Number((total / records.length).toFixed(1)),
+    highest: Number(Math.max(...values).toFixed(1)),
+    lowest: Number(Math.min(...values).toFixed(1))
+  };
+}
+
+export function applyWeightRecordMutation(records, nextRecord) {
+  const exists = records.some((record) => record.id === nextRecord.id);
+  const nextRecords = exists
+    ? records.map((record) => (record.id === nextRecord.id ? nextRecord : record))
+    : [nextRecord, ...records];
+
+  return sortWeightRecordsByTime(nextRecords);
+}
+
+export function deleteWeightRecord(records, id) {
+  return sortWeightRecordsByTime(records.filter((record) => record.id !== id));
+}
+
+export function sortFoodRecordsByTime(records) {
+  return [...records].sort((left, right) => new Date(right.eatenAt) - new Date(left.eatenAt));
+}
+
+export function getFoodImageCount(records) {
+  return records.filter((record) => record.imageKey).length;
+}
+
+export function getTodayFoodRecordCount(records, now = new Date()) {
+  const todayKey = dateKey(now);
+  return records.filter((record) => dateKey(record.eatenAt) === todayKey).length;
+}
+
+export function getFoodMealTypeStats(records) {
+  return records.reduce((stats, record) => ({
+    ...stats,
+    [record.mealType]: (stats[record.mealType] || 0) + 1
+  }), {});
+}
+
+export function getRecentFoodDailyCounts(records, now = new Date(), days = 7) {
+  const endDate = new Date(now);
+  endDate.setHours(0, 0, 0, 0);
+
+  return Array.from({ length: days }, (_item, index) => {
+    const date = new Date(endDate);
+    date.setDate(endDate.getDate() - (days - index - 1));
+    const key = dateKey(date);
+
+    return {
+      key,
+      label: `${date.getMonth() + 1}/${date.getDate()}`,
+      count: records.filter((record) => dateKey(record.eatenAt) === key).length
+    };
+  });
+}
+
 export function formatDateTime(value) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
@@ -175,6 +277,11 @@ export function normalizeChartReferenceLimit(value, fallback = DEFAULT_CHART_REF
 
 export function formatGlucoseLimit(value) {
   return String(normalizeChartReferenceLimit(value));
+}
+
+function dateKey(value) {
+  const date = value instanceof Date ? value : new Date(value);
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 }
 
 export function makeSeedRecords(now = new Date()) {

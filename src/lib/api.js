@@ -201,6 +201,37 @@ export async function clearBloodPressureRecordsOnServer() {
   });
 }
 
+export async function listWeightRecords() {
+  const result = await requestJson('/weight-records');
+  return result.records;
+}
+
+export async function createWeightRecordOnServer(record) {
+  return requestJson('/weight-records', {
+    method: 'POST',
+    body: JSON.stringify(record)
+  });
+}
+
+export async function updateWeightRecordOnServer(id, record) {
+  return requestJson(`/weight-records/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(record)
+  });
+}
+
+export async function deleteWeightRecordOnServer(id) {
+  return requestJson(`/weight-records/${id}`, {
+    method: 'DELETE'
+  });
+}
+
+export async function clearWeightRecordsOnServer() {
+  return requestJson('/weight-records', {
+    method: 'DELETE'
+  });
+}
+
 export async function listFoodRecords() {
   const result = await requestJson('/food-records');
   return result.records;

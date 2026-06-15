@@ -270,6 +270,70 @@ test('supports the blood pressure monitoring flow with optional pulse', async ({
   await expect(page.getByText('还没有血压记录')).toBeVisible();
 });
 
+test('supports the weight record flow with chart and export', async ({ page }) => {
+  const { token } = await registerByApi(page, uniqueUsername('weight'));
+  await page.request.delete('/api/weight-records', {
+    headers: authHeaders(token)
+  });
+
+  await page.goto('/');
+  await expect(page.getByRole('button', { name: /记录体重/ })).toBeVisible();
+
+  await page.getByRole('button', { name: /记录体重/ }).click();
+  await expect(page.getByRole('heading', { name: '记录一次体重' })).toBeVisible();
+  await page.locator('.sheet').getByLabel('体重').fill('62.4');
+  await page.getByLabel('测量时间').fill('2026-05-27T07:30');
+  await page.locator('.sheet').getByLabel('备注').fill('晨起体重');
+  await page.getByRole('button', { name: /保存体重/ }).click();
+
+  await expect(page.getByText('体重已保存')).toBeVisible();
+  await expect(page.getByText('62.4').first()).toBeVisible();
+
+  await page.locator('.bottom-nav').getByRole('button', { name: '首页' }).click();
+  await expect(page.getByText('最近体重')).toBeVisible();
+  await expect(page.getByRole('heading', { name: '62.4 kg' })).toBeVisible();
+
+  await page.locator('.bottom-nav').getByRole('button', { name: '记录' }).click();
+  await page.locator('.record-switch').getByRole('button', { name: '体重记录' }).click();
+  await page.getByText('晨起体重').click();
+  await expect(page.getByText('体重详情')).toBeVisible();
+
+  await page.getByRole('button', { name: /编辑/ }).click();
+  await page.locator('.sheet').getByLabel('体重').fill('61.9');
+  await page.getByRole('button', { name: /保存体重/ }).click();
+  await expect(page.getByText('体重已更新')).toBeVisible();
+  await expect(page.getByText('61.9').first()).toBeVisible();
+
+  await page.locator('.bottom-nav').getByRole('button', { name: '曲线' }).click();
+  await page.locator('.record-switch').getByRole('button', { name: '体重趋势' }).click();
+  await expect(page.locator('.weight-line')).toBeVisible();
+  await page.locator('.chart-hit-area').first().hover();
+  await expect(page.getByText('体重 61.9 kg')).toBeVisible();
+  await expect(page.getByText(/记录时间/)).toBeVisible();
+
+  await page.locator('.bottom-nav').getByRole('button', { name: '导出' }).click();
+  await page.locator('.record-switch').getByRole('button', { name: '体重报告' }).click();
+  await expect(page.getByText('体重记录汇总')).toBeVisible();
+  await expect(page.locator('.report-list')).toContainText('61.9 kg');
+
+  const imageDownload = page.waitForEvent('download');
+  await page.getByRole('button', { name: /导出图片/ }).click();
+  await expect((await imageDownload).suggestedFilename()).toMatch(/^体重记录-\d+\.png$/);
+
+  const pdfDownload = page.waitForEvent('download');
+  await page.getByRole('button', { name: /导出 PDF/ }).click();
+  await expect((await pdfDownload).suggestedFilename()).toMatch(/^体重记录-\d+\.pdf$/);
+
+  await page.locator('.bottom-nav').getByRole('button', { name: '记录' }).click();
+  await page.locator('.record-switch').getByRole('button', { name: '体重记录' }).click();
+  const weightRecord = page.locator('.record-card').filter({ hasText: '晨起体重' });
+  await weightRecord.getByRole('button', { name: /删除/ }).click();
+  await expect(page.getByText('删除这条体重？')).toBeVisible();
+  await page.locator('.confirm-box').getByRole('button', { name: '删除' }).click();
+  await expect(page.getByText('体重已删除')).toBeVisible();
+  await expect(page.getByText('还没有体重记录')).toBeVisible();
+});
+
 test('opens the system save sheet for image export when file sharing is available', async ({ page }) => {
   const { token } = await registerByApi(page, uniqueUsername('share'));
   await page.request.post('/api/records', {
@@ -386,6 +450,29 @@ test('supports the food record flow with an uploaded image', async ({ page }) =>
   await expect(page.getByText('饮食已更新')).toBeVisible();
   await expect(page.getByText('杂粮饼半个，鸡蛋一个')).toBeVisible();
 
+  await page.locator('.bottom-nav').getByRole('button', { name: '曲线' }).click();
+  await page.locator('.record-switch').getByRole('button', { name: '饮食趋势' }).click();
+  await expect(page.getByText('饮食记录频次')).toBeVisible();
+  await expect(page.locator('.food-frequency-chart')).toBeVisible();
+  await expect(page.getByText('时间轴')).toBeVisible();
+  await expect(page.getByText('杂粮饼半个，鸡蛋一个')).toBeVisible();
+
+  await page.locator('.bottom-nav').getByRole('button', { name: '导出' }).click();
+  await page.locator('.record-switch').getByRole('button', { name: '饮食报告' }).click();
+  await expect(page.getByText('饮食记录汇总')).toBeVisible();
+  await expect(page.locator('.food-report-list')).toContainText('杂粮饼半个，鸡蛋一个');
+  await expect(page.locator('.food-report-thumb img')).toBeVisible();
+
+  const imageDownload = page.waitForEvent('download');
+  await page.getByRole('button', { name: /导出图片/ }).click();
+  await expect((await imageDownload).suggestedFilename()).toMatch(/^饮食记录-\d+\.png$/);
+
+  const pdfDownload = page.waitForEvent('download');
+  await page.getByRole('button', { name: /导出 PDF/ }).click();
+  await expect((await pdfDownload).suggestedFilename()).toMatch(/^饮食记录-\d+\.pdf$/);
+
+  await page.locator('.bottom-nav').getByRole('button', { name: '记录' }).click();
+  await page.locator('.record-switch').getByRole('button', { name: '饮食记录' }).click();
   const editedRecord = page.locator('.record-card').filter({ hasText: '杂粮饼半个，鸡蛋一个' });
   await editedRecord.getByRole('button', { name: /删除/ }).click();
   await expect(page.getByText('删除这条饮食？')).toBeVisible();

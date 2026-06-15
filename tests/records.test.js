@@ -3,16 +3,28 @@ import {
   PERIODS,
   applyBloodPressureRecordMutation,
   applyRecordMutation,
+  applyWeightRecordMutation,
   createBloodPressureRecord,
   createRecord,
+  createWeightRecord,
   deleteBloodPressureRecord,
   deleteRecord,
+  deleteWeightRecord,
   formatGlucoseValue,
+  formatWeightValue,
   getBloodPressureStats,
+  getFoodImageCount,
+  getFoodMealTypeStats,
   getLatestBloodPressureRecord,
   getLatestRecord,
+  getLatestWeightRecord,
+  getRecentFoodDailyCounts,
   getRecordStats,
+  getTodayFoodRecordCount,
+  getWeightStats,
   sortBloodPressureRecordsByTime,
+  sortFoodRecordsByTime,
+  sortWeightRecordsByTime,
   sortRecordsByTime
 } from '../src/lib/records.js';
 
@@ -119,5 +131,78 @@ describe('blood pressure record utilities', () => {
     expect(edited.find((record) => record.id === 'added').pulse).toBe(70);
 
     expect(deleteBloodPressureRecord(edited, 'added').map((record) => record.id)).toEqual(['new', 'mid', 'old']);
+  });
+});
+
+describe('weight record utilities', () => {
+  const records = [
+    createWeightRecord({ id: 'old', weight: 63.2, measuredAt: '2026-05-19T07:20', note: '早起' }),
+    createWeightRecord({ id: 'new', weight: 62.4, measuredAt: '2026-05-25T09:30', note: '早餐后' }),
+    createWeightRecord({ id: 'mid', weight: 62.8, measuredAt: '2026-05-21T22:00', note: '' })
+  ];
+
+  it('keeps weight values to one decimal place and sorts newest first', () => {
+    expect(createWeightRecord({ weight: 62.46 }).weight).toBe(62.5);
+    expect(formatWeightValue(62)).toBe('62.0');
+    expect(formatWeightValue(62.46)).toBe('62.5');
+    expect(sortWeightRecordsByTime(records).map((record) => record.id)).toEqual(['new', 'mid', 'old']);
+    expect(getLatestWeightRecord(records).id).toBe('new');
+  });
+
+  it('computes weight summary stats', () => {
+    expect(getWeightStats(records)).toEqual({
+      count: 3,
+      average: 62.8,
+      highest: 63.2,
+      lowest: 62.4
+    });
+  });
+
+  it('adds, edits, and deletes weight records without mutating the original array', () => {
+    const added = applyWeightRecordMutation(records, createWeightRecord({
+      id: 'added',
+      weight: 62.1,
+      measuredAt: '2026-05-26T13:15',
+      note: '午后'
+    }));
+
+    expect(records).toHaveLength(3);
+    expect(getLatestWeightRecord(added).id).toBe('added');
+
+    const edited = applyWeightRecordMutation(added, { ...added[0], weight: 61.9, note: '已调整' });
+    expect(edited.find((record) => record.id === 'added').weight).toBe(61.9);
+    expect(edited.find((record) => record.id === 'added').note).toBe('已调整');
+
+    expect(deleteWeightRecord(edited, 'added').map((record) => record.id)).toEqual(['new', 'mid', 'old']);
+  });
+});
+
+describe('food record utilities', () => {
+  const records = [
+    { id: 'old', mealType: '早餐', eatenAt: '2026-05-20T08:10', content: '牛奶', note: '', imageKey: 'old-image' },
+    { id: 'new', mealType: '午餐', eatenAt: '2026-05-26T12:20', content: '米饭半碗', note: '饭后散步', imageKey: null },
+    { id: 'mid', mealType: '晚餐', eatenAt: '2026-05-25T18:30', content: '青菜和鱼', note: '', imageKey: 'mid-image' },
+    { id: 'same-day', mealType: '加餐', eatenAt: '2026-05-26T16:00', content: '坚果', note: '', imageKey: null }
+  ];
+
+  it('sorts food records from newest to oldest', () => {
+    expect(sortFoodRecordsByTime(records).map((record) => record.id)).toEqual(['same-day', 'new', 'mid', 'old']);
+  });
+
+  it('counts food records for today and recent days', () => {
+    const now = new Date('2026-05-26T21:00');
+
+    expect(getTodayFoodRecordCount(records, now)).toBe(2);
+    expect(getRecentFoodDailyCounts(records, now).map((item) => item.count)).toEqual([1, 0, 0, 0, 0, 1, 2]);
+  });
+
+  it('summarizes meal types and image records', () => {
+    expect(getFoodImageCount(records)).toBe(2);
+    expect(getFoodMealTypeStats(records)).toEqual({
+      早餐: 1,
+      午餐: 1,
+      晚餐: 1,
+      加餐: 1
+    });
   });
 });

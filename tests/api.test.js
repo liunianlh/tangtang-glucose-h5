@@ -9,17 +9,20 @@ import { createMemoryBloodPressureRecordRepository } from '../server/repositorie
 import { createMemoryFoodRecordRepository } from '../server/repositories/memoryFoodRecordRepository.js';
 import { createMemoryRecordRepository } from '../server/repositories/memoryRecordRepository.js';
 import { createMemoryUserRepository } from '../server/repositories/memoryUserRepository.js';
+import { createMemoryWeightRecordRepository } from '../server/repositories/memoryWeightRecordRepository.js';
 
 function makeTestApp(seed = []) {
   const recordRepository = createMemoryRecordRepository(seed);
   const userRepository = createMemoryUserRepository();
   const bloodPressureRecordRepository = createMemoryBloodPressureRecordRepository();
+  const weightRecordRepository = createMemoryWeightRecordRepository();
   const foodRecordRepository = createMemoryFoodRecordRepository();
   const foodImageStorage = createFoodImageStorage(mkdtempSync(join(tmpdir(), 'glucose-food-images-')));
   return createApp({
     recordRepository,
     userRepository,
     bloodPressureRecordRepository,
+    weightRecordRepository,
     foodRecordRepository,
     foodImageStorage,
     authSecret: 'test-auth-secret'
@@ -450,6 +453,143 @@ describe('blood pressure records API', () => {
       });
     expect(invalidPulse.status).toBe(400);
     expect(invalidPulse.body.error).toBe('INVALID_BLOOD_PRESSURE_RECORD');
+  });
+});
+
+describe('weight records API', () => {
+  it('requires authentication for weight data', async () => {
+    const app = makeTestApp();
+
+    const response = await request(app).get('/api/weight-records');
+
+    expect(response.status).toBe(401);
+    expect(response.body.error).toBe('UNAUTHORIZED');
+  });
+
+  it('creates, lists, updates, and deletes weight records', async () => {
+    const app = makeTestApp();
+    const { token } = await registerUser(app, 'wife', '我的老婆');
+
+    const created = await request(app)
+      .post('/api/weight-records')
+      .set(authHeader(token))
+      .send({
+        weight: 62.46,
+        measuredAt: '2026-05-25T07:35',
+        note: '晨起体重'
+      });
+
+    expect(created.status).toBe(201);
+    expect(created.body).toMatchObject({
+      weight: 62.5,
+      measuredAt: '2026-05-25T07:35',
+      note: '晨起体重'
+    });
+
+    const listed = await request(app)
+      .get('/api/weight-records')
+      .set(authHeader(token));
+    expect(listed.status).toBe(200);
+    expect(listed.body.records).toHaveLength(1);
+    expect(listed.body.records[0].id).toBe(created.body.id);
+
+    const updated = await request(app)
+      .put(`/api/weight-records/${created.body.id}`)
+      .set(authHeader(token))
+      .send({
+        weight: 61.94,
+        measuredAt: '2026-05-26T07:10',
+        note: '第二天晨起'
+      });
+
+    expect(updated.status).toBe(200);
+    expect(updated.body).toMatchObject({
+      id: created.body.id,
+      weight: 61.9,
+      measuredAt: '2026-05-26T07:10',
+      note: '第二天晨起'
+    });
+
+    const deleted = await request(app)
+      .delete(`/api/weight-records/${created.body.id}`)
+      .set(authHeader(token));
+    expect(deleted.status).toBe(204);
+
+    const afterDelete = await request(app)
+      .get('/api/weight-records')
+      .set(authHeader(token));
+    expect(afterDelete.body.records).toEqual([]);
+  });
+
+  it('keeps weight records isolated between users', async () => {
+    const app = makeTestApp();
+    const wife = await registerUser(app, 'wife', '我的老婆');
+    const husband = await registerUser(app, 'husband', '我');
+
+    const created = await request(app)
+      .post('/api/weight-records')
+      .set(authHeader(wife.token))
+      .send({
+        weight: 62.5,
+        measuredAt: '2026-05-25T07:20',
+        note: '老婆的体重'
+      });
+
+    expect(created.status).toBe(201);
+
+    const husbandRecords = await request(app)
+      .get('/api/weight-records')
+      .set(authHeader(husband.token));
+    expect(husbandRecords.body.records).toEqual([]);
+
+    const husbandUpdate = await request(app)
+      .put(`/api/weight-records/${created.body.id}`)
+      .set(authHeader(husband.token))
+      .send({
+        weight: 63,
+        measuredAt: '2026-05-26T08:10',
+        note: '不能改别人的'
+      });
+    expect(husbandUpdate.status).toBe(404);
+    expect(husbandUpdate.body.error).toBe('WEIGHT_RECORD_NOT_FOUND');
+  });
+
+  it('rejects invalid weight payloads', async () => {
+    const app = makeTestApp();
+    const { token } = await registerUser(app, 'wife', '我的老婆');
+
+    const tooLow = await request(app)
+      .post('/api/weight-records')
+      .set(authHeader(token))
+      .send({
+        weight: 49.9,
+        measuredAt: '2026-05-26T08:15',
+        note: ''
+      });
+    expect(tooLow.status).toBe(400);
+    expect(tooLow.body.error).toBe('INVALID_WEIGHT_RECORD');
+
+    const tooHigh = await request(app)
+      .post('/api/weight-records')
+      .set(authHeader(token))
+      .send({
+        weight: 200.1,
+        measuredAt: '2026-05-26T08:15',
+        note: ''
+      });
+    expect(tooHigh.status).toBe(400);
+    expect(tooHigh.body.error).toBe('INVALID_WEIGHT_RECORD');
+
+    const invalidDate = await request(app)
+      .post('/api/weight-records')
+      .set(authHeader(token))
+      .send({
+        weight: 62.5,
+        measuredAt: 'not-a-date',
+        note: ''
+      });
+    expect(invalidDate.status).toBe(400);
+    expect(invalidDate.body.error).toBe('INVALID_WEIGHT_RECORD');
   });
 });
 

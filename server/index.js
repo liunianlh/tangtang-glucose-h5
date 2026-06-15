@@ -6,10 +6,12 @@ import { createMemoryBloodPressureRecordRepository } from './repositories/memory
 import { createMemoryFoodRecordRepository } from './repositories/memoryFoodRecordRepository.js';
 import { createMemoryRecordRepository } from './repositories/memoryRecordRepository.js';
 import { createMemoryUserRepository } from './repositories/memoryUserRepository.js';
+import { createMemoryWeightRecordRepository } from './repositories/memoryWeightRecordRepository.js';
 import { createPrismaBloodPressureRecordRepository } from './repositories/prismaBloodPressureRecordRepository.js';
 import { createPrismaFoodRecordRepository } from './repositories/prismaFoodRecordRepository.js';
 import { createPrismaRecordRepository } from './repositories/prismaRecordRepository.js';
 import { createPrismaUserRepository } from './repositories/prismaUserRepository.js';
+import { createPrismaWeightRecordRepository } from './repositories/prismaWeightRecordRepository.js';
 
 const port = Number(process.env.PORT || 3001);
 const useMemoryRepository = process.env.USE_MEMORY_DB === 'true' || !process.env.DATABASE_URL;
@@ -24,6 +26,9 @@ const userRepository = useMemoryRepository
 const bloodPressureRecordRepository = useMemoryRepository
   ? createMemoryBloodPressureRecordRepository()
   : createPrismaBloodPressureRecordRepository(prisma);
+const weightRecordRepository = useMemoryRepository
+  ? createMemoryWeightRecordRepository()
+  : createPrismaWeightRecordRepository(prisma);
 const foodRecordRepository = useMemoryRepository
   ? createMemoryFoodRecordRepository()
   : createPrismaFoodRecordRepository(prisma);
@@ -33,6 +38,7 @@ const app = createApp({
   recordRepository,
   userRepository,
   bloodPressureRecordRepository,
+  weightRecordRepository,
   foodRecordRepository,
   foodImageStorage,
   authSecret: process.env.AUTH_SECRET

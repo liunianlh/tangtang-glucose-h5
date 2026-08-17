@@ -128,3 +128,15 @@ npm run test:e2e
 ## 宝塔部署
 
 见 [docs/baota-deploy.md](docs/baota-deploy.md)。
+
+只打包并上传服务器（不会更新或重启线上服务）：
+
+```bash
+npm run deploy:upload
+```
+
+脚本会生成固定文件 `tangtang-glucose-h5.tar.gz`，并上传到：
+
+```text
+/www/wwwroot/tangtang-glucose-h5.tar.gz
+```
